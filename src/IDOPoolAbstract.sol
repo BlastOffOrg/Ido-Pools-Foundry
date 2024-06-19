@@ -5,7 +5,6 @@ import "openzeppelin-contracts-upgradeable/contracts/access/Ownable2StepUpgradea
 import "./interface/IIDOPool.sol";
 import "./interface/IERC20Mintable.sol";
 import "./lib/TokenTransfer.sol";
-//import "hardhat/console.sol"; TODO remove this later
 
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
   address public buyToken;
