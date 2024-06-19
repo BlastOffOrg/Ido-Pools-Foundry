@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@redstone-finance/evm-connector/contracts/data-services/PrimaryProdDataServiceConsumerBase.sol";
 import "@redstone-finance/evm-connector/contracts/mocks/AuthorisedMockSignersBase.sol";
-import "openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 abstract contract ETHPriceOracle is
   PrimaryProdDataServiceConsumerBase,
