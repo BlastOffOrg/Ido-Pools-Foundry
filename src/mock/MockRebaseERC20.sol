@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "../interface/IERC20Rebasing.sol";
 
 contract MockRebaseERC20 is ERC20("MockERC20", "MOCK"), IERC20Rebasing {
