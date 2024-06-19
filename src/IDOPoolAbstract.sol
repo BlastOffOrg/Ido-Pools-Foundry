@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "openzeppelin-contracts-upgradeable/contracts/access/Ownable2StepUpgradeable.sol";
 import "./interface/IIDOPool.sol";
 import "./interface/IERC20Mintable.sol";
 import "./lib/TokenTransfer.sol";
