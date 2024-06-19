@@ -5,7 +5,6 @@ import "forge-std/Test.sol";
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@redstone-finance/evm-connector/contracts/core/CalldataExtractor.sol";
-import "@redstone-finance/evm-connector/src/WrapperBuilder.sol";
 import "../src/ETHIDOPool.sol";
 import "../src/mock/MockERC20.sol";
 
@@ -98,14 +97,6 @@ contract ETHIDOPoolsTest is Test {
         idoPool.participate{value: DECIMAL}(user1, address(0), DECIMAL);
         vm.stopPrank();
         // Mocking the finalize step with Redstone WrapperBuilder
-        idoPool = WrapperBuilder
-        .wrap(idoPool)
-        .usingSimpleNumericMock({
-            mockSignersCount: 10,
-            timestampMilliseconds: block.timestamp * 1000,
-            dataPoints: [{ dataFeedId: "ETH", value: 1000 }]
-        });
-
         // Mocking the finalize step
         idoPool.finalize();
 
