@@ -64,3 +64,20 @@ $ forge --help
 $ anvil --help
 $ cast --help
 ```
+
+
+### How to get it started:
+
+Here are the forge install commands:
+```
+forge install OpenZeppelin/openzeppelin-contracts@v4.9.5
+forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v4.9.5
+forge install redstone-finance/redstone-oracles-monorepo
+```
+
+Here are is the remappings file:
+
+```
+@openzeppelin/=lib/openzeppelin-contracts/
+@redstone-finance/evm-connector/=lib/redstone-oracles-monorepo/packages/evm-connector/
+```
