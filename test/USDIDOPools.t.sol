@@ -34,14 +34,13 @@ contract USDIDOPoolsTest is Test {
             address(usdb),
             address(fyUSD),
             address(idoToken),
-           // 18,
+            // 18,
             treasury,
             0,
             0,
             0,
             DECIMAL,
-            block.timestamp + 10 days,
-            1000 * DECIMAL
+            block.timestamp + 10 days
         );
 
         fyUSD.mint(user0, 1000 * DECIMAL);

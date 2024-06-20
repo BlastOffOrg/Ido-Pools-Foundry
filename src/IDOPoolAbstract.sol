@@ -3,10 +3,8 @@ pragma solidity ^0.8.20;
 
 import "openzeppelin-contracts-upgradeable/contracts/access/Ownable2StepUpgradeable.sol";
 import "./interface/IIDOPool.sol";
-import "./interface/IERC20Mintable.sol";
-import "./interface/IERC20Extented.sol";
 import "./lib/TokenTransfer.sol";
-import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
@@ -17,7 +15,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     address public idoToken;
     bool public isFinalized;
     uint256 public claimableTime;
-   // bool public isClaimable;
 
     uint256 public idoPrice; // expected price of ido decimal is ido token decimal
     uint256 public idoSize; // total amount of ido token
@@ -47,11 +44,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         _;
     }
 
-    /* modifier notStart() {
-        if (block.timestamp >= idoStartTime) revert AlreadyStarted();
-        _;
-    } */
-
     modifier claimable() {
         if (!isFinalized) revert NotFinalized();
         if (block.timestamp < claimableTime) revert NotClaimable();
@@ -67,21 +59,18 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 idoEndTime_,
         uint256 minimumFundingGoal_,
         uint256 price_,
-        uint256 claimableTime_,
-        uint256 idoSize_
+        uint256 claimableTime_
     ) internal onlyInitializing {
         __IDOPoolAbstract_init_unchained(
             buyToken_,
             fyToken_,
             idoToken_,
-
             treasury_,
             idoStartTime_,
             idoEndTime_,
             minimumFundingGoal_,
             price_,
-            claimableTime_,
-            idoSize_
+            claimableTime_
         );
         __Ownable2Step_init();
     }
@@ -90,32 +79,30 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         address buyToken_,
         address fyToken_,
         address idoToken_,
-       // uint256 idoDecimals_,
+        // uint256 idoDecimals_,
         address treasury_,
         uint256 idoStartTime_,
         uint256 idoEndTime_,
         uint256 minimumFundingGoal_,
         uint256 price_,
-        uint256 claimableTime_,
-        uint256 idoSize_
+        uint256 claimableTime_
     ) internal onlyInitializing {
         buyToken = buyToken_;
         fyToken = fyToken_;
         idoToken = idoToken_;
-        idoDecimals = IERC20Extented(idoToken_).decimals();
+        idoDecimals = ERC20(idoToken_).decimals();
         treasury = treasury_;
         idoStartTime = idoStartTime_;
         idoEndTime = idoEndTime_;
         minimumFundingGoal = minimumFundingGoal_;
         idoPrice = price_;
         claimableTime = claimableTime_;
-        idoSize = idoSize_;
     }
 
     function setIDOToken(address _token) external onlyOwner {
         if (isFinalized) revert("InvalidToken");
         idoToken = _token;
-        idoDecimals = IERC20Extented(_token).decimals();
+        idoDecimals = ERC20(_token).decimals();
     }
 
     function _getTokenUSDPrice() internal view virtual returns (uint256 price, uint256 decimals);
@@ -128,11 +115,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      */
     function finalize() external onlyOwner notFinalized {
         // removed idoSize here and hardcoded at initialization
-        //idoSize = IERC20(idoToken).balanceOf(address(this));
+        idoSize = IERC20(idoToken).balanceOf(address(this));
+        (snapshotTokenPrice, snapshotPriceDecimals) = _getTokenUSDPrice();
         fundedUSDValue = ((totalFunded[buyToken] + totalFunded[fyToken]) * snapshotTokenPrice) / snapshotPriceDecimals;
         if (block.timestamp < idoEndTime) revert IDONotEnded();
         else if (fundedUSDValue < minimumFundingGoal) revert FudingGoalNotReached();
-        (snapshotTokenPrice, snapshotPriceDecimals) = _getTokenUSDPrice();
         isFinalized = true;
     }
 
@@ -155,8 +142,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
             return (buyAlloc, 0);
         } else {
-            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoPrice) / idoExp);
-            // Explicitly convert excessiveInUSD to ensure rounding down
+            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / idoPrice); // Incorrect
             uint256 excessiveTokens = (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice;
             return (exceedAlloc, excessiveTokens);
         }
@@ -234,13 +220,23 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     /**
      * @dev Withdraw remaining IDO token if funding goal is not reached
      */
-    function withdrawSpareIDO() external finalized onlyOwner {
+    function withdrawSpareIDO() external notFinalized onlyOwner {
         uint256 totalIDOGoal = (idoSize * idoPrice) / (10 ** idoDecimals);
         if (totalIDOGoal <= fundedUSDValue) revert();
 
         uint256 totalBought = fundedUSDValue / idoPrice * (10 ** idoDecimals);
-        uint256 idoBal = IERC20Mintable(idoToken).balanceOf(address(this));
+        uint256 idoBal = IERC20(idoToken).balanceOf(address(this));
         uint256 spare = idoBal - totalBought;
         TokenTransfer._transferToken(idoToken, msg.sender, spare);
+    }
+
+    function increaseClaimableTime(uint256 _newTime) external onlyOwner {
+        require(block.timestamp + 1 weeks < _newTime);
+        claimableTime = _newTime;
+    }
+
+    function increaseIdoEndTime(uint256 _newTime) external onlyOwner {
+        require(block.timestamp + 1 weeks < _newTime);
+        idoEndTime = _newTime;
     }
 }
