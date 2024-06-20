@@ -121,12 +121,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
    */
   function finalize() external onlyOwner notFinalized {
     if (block.timestamp < idoEndTime) revert IDONotEnded();
+    idoSize = IERC20(idoToken).balanceOf(address(this));
     else if (idoSize < minimumFundingGoal) revert FudingGoalNotReached();
     (snapshotTokenPrice, snapshotPriceDecimals) = _getTokenUSDPrice();
     fundedUSDValue =
       ((totalFunded[buyToken] + totalFunded[fyToken]) * snapshotTokenPrice) /
       snapshotPriceDecimals;
-    idoSize = IERC20(idoToken).balanceOf(address(this));
     isFinalized = true;
   }
 
