@@ -9,7 +9,7 @@ contract ETHIDOPool is Initializable, IDOPoolAbstract, ETHPriceOracle {
     function init(
         address fyETH_,
         address idoToken_,
-        uint256 idoDecimals_,
+       // uint256 idoDecimals_,
         address treasury_,
         bool mock_,
         uint256 idoStartTime_,
@@ -23,7 +23,7 @@ contract ETHIDOPool is Initializable, IDOPoolAbstract, ETHPriceOracle {
             address(0),
             fyETH_,
             idoToken_,
-            idoDecimals_,
+          //  idoDecimals_,
             treasury_,
             idoStartTime_,
             idoEndTime_,

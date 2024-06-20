@@ -29,7 +29,7 @@ contract ETHIDOPoolsTest is Test {
         idoPool.init(
             address(fyETH),
             address(idoToken),
-            18,
+            //18,
             treasury,
             true,
             0,

@@ -34,7 +34,7 @@ contract USDIDOPoolsTest is Test {
             address(usdb),
             address(fyUSD),
             address(idoToken),
-            18,
+           // 18,
             treasury,
             0,
             0,
