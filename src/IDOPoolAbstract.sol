@@ -120,8 +120,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
    * Finalize will calulate total value of USD funded for IDO and determine IDO size
    */
   function finalize() external onlyOwner notFinalized {
-    if (block.timestamp < idoEndTime) revert IDONotEnded();
     idoSize = IERC20(idoToken).balanceOf(address(this));
+    if (block.timestamp < idoEndTime) revert IDONotEnded();
     else if (idoSize < minimumFundingGoal) revert FudingGoalNotReached();
     (snapshotTokenPrice, snapshotPriceDecimals) = _getTokenUSDPrice();
     fundedUSDValue =
