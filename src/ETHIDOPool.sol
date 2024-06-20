@@ -16,7 +16,8 @@ contract ETHIDOPool is Initializable, IDOPoolAbstract, ETHPriceOracle {
         uint256 idoEndTime_,
         uint256 minimumFundingGoal_,
         uint256 idoPrice_,
-        uint256 claimableTime_
+        uint256 claimableTime_,
+        uint256 idoSize_
     ) external initializer {
         __IDOPoolAbstract_init(
             address(0),
@@ -28,7 +29,8 @@ contract ETHIDOPool is Initializable, IDOPoolAbstract, ETHPriceOracle {
             idoEndTime_,
             minimumFundingGoal_,
             idoPrice_,
-            claimableTime_
+            claimableTime_,
+            idoSize_
         );
         __ETHPriceOracle_init(mock_);
     }

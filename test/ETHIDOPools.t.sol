@@ -26,7 +26,19 @@ contract ETHIDOPoolsTest is Test {
         idoToken = new MockERC20();
 
         idoPool = new ETHIDOPool();
-        idoPool.init(address(fyETH), address(idoToken), 18, treasury, true, 0, 0, 0, DECIMAL, block.timestamp + 10 days);
+        idoPool.init(
+            address(fyETH),
+            address(idoToken),
+            18,
+            treasury,
+            true,
+            0,
+            0,
+            0,
+            DECIMAL,
+            block.timestamp + 10 days,
+            1000 * DECIMAL
+        );
     }
 
     function testUserCanParticipate() public {
