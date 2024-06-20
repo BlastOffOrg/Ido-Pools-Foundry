@@ -136,21 +136,25 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @return allocated
      * @return excessive
      */
-    function _getPostionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
-        uint256 posInUSD = (pos.amount * snapshotTokenPrice) / snapshotPriceDecimals; // position value in USD
+   function _getPostionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
+    uint256 posInUSD = (pos.amount * snapshotTokenPrice) / snapshotPriceDecimals; // position value in USD
 
-        uint256 idoExp = (10 ** idoDecimals);
-        // amount of ido received if exceeded funding goal
-        uint256 exceedAlloc = (idoSize * posInUSD) / fundedUSDValue;
-        // amount of ido token received if not exceeded goal
-        uint256 buyAlloc = (posInUSD * idoExp) / idoPrice;
-        if (((idoSize * idoPrice) / idoExp) >= fundedUSDValue) {
-            return (buyAlloc, 0);
-        } else {
-            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoPrice) / idoExp);
-            return (exceedAlloc, (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice);
-        }
+    uint256 idoExp = 10 ** idoDecimals;
+    // amount of ido received if exceeded funding goal
+    uint256 exceedAlloc = (idoSize * posInUSD) / fundedUSDValue;
+    // amount of ido token received if not exceeded goal
+    uint256 buyAlloc = (posInUSD * idoExp) / idoPrice;
+
+    if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
+        return (buyAlloc, 0);
+    } else {
+        uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoPrice) / idoExp);
+        // Explicitly convert excessiveInUSD to ensure rounding down
+        uint256 excessiveTokens = (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice;
+        return (exceedAlloc, excessiveTokens);
     }
+}
+
 
     /**
      * @dev Refund staker after claim and transfer fund to treasury
