@@ -30,7 +30,19 @@ contract USDIDOPoolsTest is Test {
         idoToken = new MockERC20();
 
         idoPool = new USDIDOPool();
-        idoPool.init(address(usdb), address(fyUSD), address(idoToken), 18, treasury, 0, 0, 0, DECIMAL, block.timestamp + 10 days);
+        idoPool.init(
+            address(usdb),
+            address(fyUSD),
+            address(idoToken),
+            18,
+            treasury,
+            0,
+            0,
+            0,
+            DECIMAL,
+            block.timestamp + 10 days,
+            1000 * DECIMAL
+        );
 
         fyUSD.mint(user0, 1000 * DECIMAL);
         fyUSD.mint(user1, 1000 * DECIMAL);
