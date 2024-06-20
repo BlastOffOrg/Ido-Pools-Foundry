@@ -20,9 +20,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     uint256 public idoSize; // total amount of ido token
     uint256 public snapshotTokenPrice;
     uint256 public snapshotPriceDecimals;
-    uint256 private fundedUSDValue;
-    uint256 private idoDecimals;
-    mapping(address => uint256) private totalFunded;
+    uint256 public fundedUSDValue;
+    uint256 public idoDecimals;
+    mapping(address => uint256) public totalFunded;
     mapping(address => Position) public accountPosition;
 
     uint256 public idoStartTime;
@@ -81,7 +81,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             claimableTime_,
             idoSize_
         );
-        __Ownable_init();
+        __Ownable2Step_init();
     }
 
     function __IDOPoolAbstract_init_unchained(
