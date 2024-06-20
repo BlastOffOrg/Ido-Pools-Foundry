@@ -151,7 +151,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     if (((idoSize * idoPrice) / idoExp) >= fundedUSDValue) {
       return (buyAlloc, 0);
     } else {
-      uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / idoPrice);
+      uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoPrice) / idoExp);
       return (
         exceedAlloc,
         (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice
