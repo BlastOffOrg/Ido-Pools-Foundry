@@ -14,7 +14,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     address public idoToken;
     bool public isFinalized;
     uint256 public claimableTime;
-    bool public isClaimable;
+   // bool public isClaimable;
 
     uint256 public idoPrice; // expected price of ido decimal is ido token decimal
     uint256 public idoSize; // total amount of ido token
@@ -44,10 +44,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         _;
     }
 
-    modifier notStart() {
+    /* modifier notStart() {
         if (block.timestamp >= idoStartTime) revert AlreadyStarted();
         _;
-    }
+    } */
 
     modifier claimable() {
         if (!isFinalized) revert NotFinalized();
