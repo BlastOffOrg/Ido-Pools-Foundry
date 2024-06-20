@@ -4,7 +4,10 @@ pragma solidity ^0.8.20;
 import "openzeppelin-contracts-upgradeable/contracts/access/Ownable2StepUpgradeable.sol";
 import "./interface/IIDOPool.sol";
 import "./interface/IERC20Mintable.sol";
+import "./interface/IERC20Extented.sol";
 import "./lib/TokenTransfer.sol";
+import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+
 
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     address public buyToken;
@@ -59,7 +62,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         address buyToken_,
         address fyToken_,
         address idoToken_,
-        uint256 idoDecimals_,
         address treasury_,
         uint256 idoStartTime_,
         uint256 idoEndTime_,
@@ -72,7 +74,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             buyToken_,
             fyToken_,
             idoToken_,
-            idoDecimals_,
+
             treasury_,
             idoStartTime_,
             idoEndTime_,
@@ -88,7 +90,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         address buyToken_,
         address fyToken_,
         address idoToken_,
-        uint256 idoDecimals_,
+       // uint256 idoDecimals_,
         address treasury_,
         uint256 idoStartTime_,
         uint256 idoEndTime_,
@@ -100,7 +102,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         buyToken = buyToken_;
         fyToken = fyToken_;
         idoToken = idoToken_;
-        idoDecimals = idoDecimals_;
+        idoDecimals = IERC20Extented(idoToken_).decimals();
         treasury = treasury_;
         idoStartTime = idoStartTime_;
         idoEndTime = idoEndTime_;
@@ -110,10 +112,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         idoSize = idoSize_;
     }
 
-    function setIDOToken(address _token, uint256 _idoDecimals) external onlyOwner {
+    function setIDOToken(address _token) external onlyOwner {
         if (isFinalized) revert("InvalidToken");
         idoToken = _token;
-        idoDecimals = _idoDecimals;
+        idoDecimals = IERC20Extented(_token).decimals();
     }
 
     function _getTokenUSDPrice() internal view virtual returns (uint256 price, uint256 decimals);
