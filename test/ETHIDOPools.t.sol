@@ -36,8 +36,7 @@ contract ETHIDOPoolsTest is Test {
             0,
             0,
             DECIMAL,
-            block.timestamp + 10 days,
-            1000 * DECIMAL
+            block.timestamp + 10 days
         );
     }
 
