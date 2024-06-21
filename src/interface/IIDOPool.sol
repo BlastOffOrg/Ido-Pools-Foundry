@@ -23,6 +23,10 @@ interface IIDOPool {
 
     event Claim(address indexed account, uint256 idoAmount, uint256 refundAmount);
 
+    event ClaimableTimeDelayed(uint256 previousTime, uint256 newTime);
+    event IdoEndTimeDelayed(uint256 previousTime, uint256 newTime);
+    event Finalized(uint256 idoSize, uint256 fundedUSDValue);
+
     function participate(address recipient, address token, uint256 amount) external payable;
 
     function claim(address staker) external;
