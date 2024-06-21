@@ -9,7 +9,6 @@ contract USDIDOPool is Initializable, IDOPoolAbstract {
         address usdb_,
         address fyUSD_,
         address idoToken_,
-        // uint256 idoDecimals_,
         address treasury_,
         uint256 idoStartTime_,
         uint256 idoEndTime_,
@@ -21,7 +20,6 @@ contract USDIDOPool is Initializable, IDOPoolAbstract {
             usdb_,
             fyUSD_,
             idoToken_,
-            // idoDecimals_,
             treasury_,
             idoStartTime_,
             idoEndTime_,
@@ -32,6 +30,6 @@ contract USDIDOPool is Initializable, IDOPoolAbstract {
     }
 
     function _getTokenUSDPrice() internal view virtual override returns (uint256, uint256) {
-        return (1, 1);
+        return (1, 1e18);
     }
 }

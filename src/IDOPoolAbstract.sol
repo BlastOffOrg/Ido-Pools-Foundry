@@ -6,7 +6,6 @@ import "./interface/IIDOPool.sol";
 import "./lib/TokenTransfer.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     address public buyToken;
     address public fyToken;
@@ -126,7 +125,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if (block.timestamp < idoEndTime) revert IDONotEnded();
         else if (fundedUSDValue < minimumFundingGoal) revert FudingGoalNotReached();
         isFinalized = true;
-        
+
         emit Finalized(idoSize, fundedUSDValue);
     }
 
@@ -137,7 +136,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @return allocated
      * @return excessive
      */
-    function _getPostionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
+    function _getPositionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
         uint256 posInUSD = (pos.amount * snapshotTokenPrice) / snapshotPriceDecimals; // position value in USD
 
         uint256 idoExp = 10 ** idoDecimals;
@@ -148,7 +147,13 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
             return (buyAlloc, 0);
-        } else {
+        } else {  
+            // Ensure that the division rounds down
+            //uint256 exceedAllocInUSD = (exceedAlloc * idoExp);
+            // Calculate the truncated value to handle rounding
+            //uint256 truncatedValue = exceedAllocInUSD / idoPrice;
+            //uint256 excessiveInUSD = posInUSD > truncatedValue ? posInUSD - truncatedValue : 0;
+
             uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / idoPrice); // Incorrect
             uint256 excessiveTokens = (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice;
             return (exceedAlloc, excessiveTokens);
@@ -212,7 +217,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         Position memory pos = accountPosition[staker];
         if (pos.amount == 0) revert NoStaking();
 
-        (uint256 alloc, uint256 excessive) = _getPostionValue(pos);
+        (uint256 alloc, uint256 excessive) = _getPositionValue(pos);
 
         delete accountPosition[staker];
 
@@ -239,7 +244,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     function delayClaimableTime(uint256 _newTime) external onlyOwner {
         require(_newTime > claimableTime, "New claimable time must be after current claimable time");
-        require(_newTime <= initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time");
+        require(
+            _newTime <= initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
+        );
         emit ClaimableTimeDelayed(claimableTime, _newTime);
 
         claimableTime = _newTime;
