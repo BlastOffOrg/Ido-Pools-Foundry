@@ -21,7 +21,7 @@ contract ETHIDOPoolsTest is Test {
 
     function setUp() public {
         deployer = address(this);
-        
+
         fyETH = new MockERC20();
         idoToken = new MockERC20();
 
@@ -29,13 +29,14 @@ contract ETHIDOPoolsTest is Test {
         idoPool.init(
             address(fyETH),
             address(idoToken),
-            18,
+            //18,
             treasury,
             true,
             0,
             0,
             0,
-            DECIMAL
+            DECIMAL,
+            block.timestamp + 10 days
         );
     }
 
@@ -49,7 +50,7 @@ contract ETHIDOPoolsTest is Test {
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyETH), DECIMAL);
         vm.stopPrank();
-        
+
         deal(user1, 10 ether);
         vm.startPrank(user1);
         idoPool.participate{value: DECIMAL}(user1, address(0), DECIMAL);
@@ -123,7 +124,7 @@ contract ETHIDOPoolsTest is Test {
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyETH), DECIMAL);
         vm.stopPrank();
-        
+
         deal(user1, 10 ether);
         vm.startPrank(user1);
         idoPool.participate{value: DECIMAL - 12}(user1, address(0), DECIMAL - 12);
@@ -160,7 +161,7 @@ contract ETHIDOPoolsTest is Test {
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyETH), DECIMAL);
         vm.stopPrank();
-        
+
         deal(user1, 10 ether);
         vm.startPrank(user1);
         idoPool.participate{value: DECIMAL}(user1, address(0), DECIMAL);
@@ -187,7 +188,7 @@ contract ETHIDOPoolsTest is Test {
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyETH), DECIMAL);
         vm.stopPrank();
-        
+
         deal(user1, 10 ether);
         vm.startPrank(user1);
         idoPool.participate{value: DECIMAL}(user1, address(0), DECIMAL);
@@ -220,4 +221,3 @@ contract ETHIDOPoolsTest is Test {
         assertEq(treasuryBal, DECIMAL);
     }
 }
-

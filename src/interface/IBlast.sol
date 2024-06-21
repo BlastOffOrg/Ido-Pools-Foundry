@@ -9,10 +9,10 @@ enum YieldMode {
 
 enum GasMode {
     VOID,
-    CLAIMABLE 
+    CLAIMABLE
 }
 
-interface IBlast{
+interface IBlast {
     // configure
     function configureContract(address contractAddress, YieldMode _yield, GasMode gasMode, address governor) external;
     function configure(YieldMode _yield, GasMode gasMode, address governor) external;
@@ -37,12 +37,19 @@ interface IBlast{
 
     // claim gas
     function claimAllGas(address contractAddress, address recipientOfGas) external returns (uint256);
-    function claimGasAtMinClaimRate(address contractAddress, address recipientOfGas, uint256 minClaimRateBips) external returns (uint256);
+    function claimGasAtMinClaimRate(address contractAddress, address recipientOfGas, uint256 minClaimRateBips)
+        external
+        returns (uint256);
     function claimMaxGas(address contractAddress, address recipientOfGas) external returns (uint256);
-    function claimGas(address contractAddress, address recipientOfGas, uint256 gasToClaim, uint256 gasSecondsToConsume) external returns (uint256);
+    function claimGas(address contractAddress, address recipientOfGas, uint256 gasToClaim, uint256 gasSecondsToConsume)
+        external
+        returns (uint256);
 
     // read functions
     function readClaimableYield(address contractAddress) external view returns (uint256);
     function readYieldConfiguration(address contractAddress) external view returns (uint8);
-    function readGasParams(address contractAddress) external view returns (uint256 etherSeconds, uint256 etherBalance, uint256 lastUpdated, GasMode);
+    function readGasParams(address contractAddress)
+        external
+        view
+        returns (uint256 etherSeconds, uint256 etherBalance, uint256 lastUpdated, GasMode);
 }

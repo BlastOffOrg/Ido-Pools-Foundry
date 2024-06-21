@@ -5,7 +5,7 @@ import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "../interface/IERC20Mintable.sol";
 
 contract MockERC20 is ERC20("MockERC20", "MOCK"), IERC20Mintable {
-  function mint(address recipient, uint256 amount) external {
-    _mint(recipient, amount);
-  }
+    function mint(address recipient, uint256 amount) external {
+        _mint(recipient, amount);
+    }
 }
