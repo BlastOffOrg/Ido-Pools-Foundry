@@ -6,7 +6,6 @@ import "./interface/IIDOPool.sol";
 import "./lib/TokenTransfer.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     address public buyToken;
     address public fyToken;
@@ -126,7 +125,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if (block.timestamp < idoEndTime) revert IDONotEnded();
         else if (fundedUSDValue < minimumFundingGoal) revert FudingGoalNotReached();
         isFinalized = true;
-        
+
         emit Finalized(idoSize, fundedUSDValue);
     }
 
@@ -149,7 +148,13 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
             return (buyAlloc, 0);
         } else {
-            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / idoPrice); // Incorrect
+            uint256 exceedAllocUSD = (exceedAlloc * idoPrice) / idoExp; // Convert exceedAlloc to USD
+            uint256 excessiveInUSD;
+            if (posInUSD > exceedAllocUSD) {
+                excessiveInUSD = posInUSD - exceedAllocUSD; // Corrected order of operations
+            } else {
+                excessiveInUSD = 0;
+            }
             uint256 excessiveTokens = (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice;
             return (exceedAlloc, excessiveTokens);
         }
@@ -239,7 +244,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     function delayClaimableTime(uint256 _newTime) external onlyOwner {
         require(_newTime > claimableTime, "New claimable time must be after current claimable time");
-        require(_newTime <= initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time");
+        require(
+            _newTime <= initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
+        );
         emit ClaimableTimeDelayed(claimableTime, _newTime);
 
         claimableTime = _newTime;
