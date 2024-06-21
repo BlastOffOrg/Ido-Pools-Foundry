@@ -25,9 +25,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     mapping(address => uint256) public totalFunded;
     mapping(address => Position) public accountPosition;
 
+    uint256 public minimumFundingGoal;
     uint256 public idoStartTime;
     uint256 public idoEndTime;
-    uint256 public minimumFundingGoal;
+
+    uint256 public initialClaimableTime;
+    uint256 public initialIdoEndTime;
 
     modifier notFinalized() {
         if (isFinalized) revert AlreadyFinalized();
@@ -94,9 +97,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         treasury = treasury_;
         idoStartTime = idoStartTime_;
         idoEndTime = idoEndTime_;
+        initialIdoEndTime = idoEndTime_;
         minimumFundingGoal = minimumFundingGoal_;
         idoPrice = price_;
         claimableTime = claimableTime_;
+        initialClaimableTime = claimableTime_;
     }
 
     function setIDOToken(address _token) external onlyOwner {
@@ -121,6 +126,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if (block.timestamp < idoEndTime) revert IDONotEnded();
         else if (fundedUSDValue < minimumFundingGoal) revert FudingGoalNotReached();
         isFinalized = true;
+        
+        emit Finalized(idoSize, fundedUSDValue);
     }
 
     /**
@@ -230,13 +237,19 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         TokenTransfer._transferToken(idoToken, msg.sender, spare);
     }
 
-    function increaseClaimableTime(uint256 _newTime) external onlyOwner {
-        require(block.timestamp + 1 weeks < _newTime);
+    function delayClaimableTime(uint256 _newTime) external onlyOwner {
+        require(_newTime > claimableTime, "New claimable time must be after current claimable time");
+        require(_newTime <= initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time");
+        emit ClaimableTimeDelayed(claimableTime, _newTime);
+
         claimableTime = _newTime;
     }
 
-    function increaseIdoEndTime(uint256 _newTime) external onlyOwner {
-        require(block.timestamp + 1 weeks < _newTime);
+    function delayIdoEndTime(uint256 _newTime) external onlyOwner {
+        require(_newTime > idoEndTime, "New IDO end time must be after current IDO end time");
+        require(_newTime <= initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
+        emit IdoEndTimeDelayed(idoEndTime, _newTime);
+
         idoEndTime = _newTime;
     }
 }
