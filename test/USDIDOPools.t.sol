@@ -17,7 +17,7 @@ contract USDIDOPoolsTest is Test {
     address treasury = address(2);
     address user0 = address(3);
     address user1 = address(4);
-    
+
     uint256 constant DECIMAL = 10 ** 18;
 
     function setUp() public {
@@ -34,12 +34,13 @@ contract USDIDOPoolsTest is Test {
             address(usdb),
             address(fyUSD),
             address(idoToken),
-            18,
+            // 18,
             treasury,
             0,
             0,
             0,
-            DECIMAL
+            DECIMAL,
+            block.timestamp + 10 days
         );
 
         fyUSD.mint(user0, 1000 * DECIMAL);
@@ -48,7 +49,6 @@ contract USDIDOPoolsTest is Test {
     }
 
     function testUserCanParticipate() public {
-        
         vm.startPrank(user0);
         fyUSD.approve(address(idoPool), 1000 * DECIMAL);
         vm.stopPrank();
@@ -60,7 +60,7 @@ contract USDIDOPoolsTest is Test {
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         idoPool.participate(user1, address(usdb), 1000 * DECIMAL);
         vm.stopPrank();
@@ -87,7 +87,7 @@ contract USDIDOPoolsTest is Test {
         // NOTE: The above doesn't work. Something to do with the proxy ?
         vm.expectRevert(abi.encodeWithSignature("NotFinalized()"));
         vm.stopPrank();
-        
+
         vm.startPrank(user0);
         idoPool.claim(user0);
         vm.stopPrank();
@@ -103,11 +103,11 @@ contract USDIDOPoolsTest is Test {
         vm.startPrank(user1);
         usdb.approve(address(idoPool), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         idoPool.participate(user1, address(usdb), 1000 * DECIMAL);
         vm.stopPrank();
@@ -140,7 +140,7 @@ contract USDIDOPoolsTest is Test {
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         idoPool.participate(user1, address(usdb), 1000 * DECIMAL - 12);
         vm.stopPrank();
@@ -171,15 +171,15 @@ contract USDIDOPoolsTest is Test {
         vm.startPrank(user0);
         fyUSD.approve(address(idoPool), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         usdb.approve(address(idoPool), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         idoPool.participate(user1, address(usdb), 1000 * DECIMAL);
         vm.stopPrank();
@@ -194,7 +194,6 @@ contract USDIDOPoolsTest is Test {
         idoPool.participate{value: DECIMAL}(user1, address(0), DECIMAL);
 
         vm.stopPrank();
-
     }
 
     function testRefundCorrectAmountAfterFinalized() public {
@@ -203,11 +202,11 @@ contract USDIDOPoolsTest is Test {
         vm.startPrank(user0);
         fyUSD.approve(address(idoPool), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user1);
         usdb.approve(address(idoPool), 1000 * DECIMAL);
         vm.stopPrank();
-        
+
         vm.startPrank(user0);
         idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
         vm.stopPrank();
@@ -243,4 +242,3 @@ contract USDIDOPoolsTest is Test {
         assertEq(treasuryBal, 1000 * DECIMAL);
     }
 }
-
