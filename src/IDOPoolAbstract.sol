@@ -137,7 +137,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @return allocated
      * @return excessive
      */
-    function _getPostionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
+    function _getPositionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
         uint256 posInUSD = (pos.amount * snapshotTokenPrice) / snapshotPriceDecimals; // position value in USD
 
         uint256 idoExp = 10 ** idoDecimals;
@@ -149,6 +149,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
             return (buyAlloc, 0);
         } else {
+            // Ensure that the division rounds down
+            //uint256 exceedAllocInUSD = (exceedAlloc * idoExp);
+            // Calculate the truncated value to handle rounding
+            //uint256 truncatedValue = exceedAllocInUSD / idoPrice;
+            //uint256 excessiveInUSD = posInUSD > truncatedValue ? posInUSD - truncatedValue : 0;
+
             uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / idoPrice); // Incorrect
             uint256 excessiveTokens = (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice;
             return (exceedAlloc, excessiveTokens);
@@ -212,7 +218,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         Position memory pos = accountPosition[staker];
         if (pos.amount == 0) revert NoStaking();
 
-        (uint256 alloc, uint256 excessive) = _getPostionValue(pos);
+        (uint256 alloc, uint256 excessive) = _getPositionValue(pos);
 
         delete accountPosition[staker];
 
