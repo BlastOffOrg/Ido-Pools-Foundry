@@ -34,6 +34,6 @@ contract ETHIDOPool is Initializable, IDOPoolAbstract, ETHPriceOracle {
     }
 
     function _getTokenUSDPrice() internal view virtual override returns (uint256, uint256) {
-        return (getETHPrice(), 1e8);
+        return (getETHPrice(), 1e18);
     }
 }
