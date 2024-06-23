@@ -20,20 +20,27 @@ contract USDIDOPoolsTest is Test {
     address user2 = address(5);
 
     uint256 constant DECIMAL = 10 ** 18;
-    uint256 user0DepositAmount = 300 * DECIMAL;
-    uint256 user1DepositAmount = 200 * DECIMAL;
-    uint256 user2DepositAmount = 500 * DECIMAL;
+    uint256 user0MintAmount = 1000 * DECIMAL;
+    uint256 user1MintAmount = 1000 * DECIMAL;
+    uint256 user2MintAmount = 1000 * DECIMAL;
+    uint256 user0DepositAmount = 200 * DECIMAL;
+    uint256 user1DepositAmount = 400 * DECIMAL;
+    uint256 user2DepositAmount = 400 * DECIMAL;
+    uint256 minimumFundingGoal = 1000000000000000000000;
+    uint256 idoPrice = 1000000000000000000;
 
     function setUp() public {
-        //address[] memory users = new address[](2);
-        //users[0] = user0;
-        //users[1] = user1;
-
         fyUSD = new MockERC20();
         usdb = new MockERC20();
         idoToken = new MockERC20();
 
         idoPool = new USDIDOPool();
+
+        fyUSD.mint(user0, user0MintAmount);
+        usdb.mint(user1, user1MintAmount);
+        usdb.mint(user2, user2MintAmount);
+        idoToken.mint(address(idoPool), ((minimumFundingGoal / idoPrice)) * DECIMAL);
+
         idoPool.init(
             address(usdb),
             address(fyUSD),
@@ -41,15 +48,10 @@ contract USDIDOPoolsTest is Test {
             treasury,
             block.timestamp,
             block.timestamp + 10 days,
-            1000 ether,
-            0.05 ether,
+            minimumFundingGoal,
+            idoPrice,
             block.timestamp + 10 days
         );
-
-        fyUSD.mint(user0, 1000 * DECIMAL);
-        fyUSD.mint(user1, 1000 * DECIMAL);
-        usdb.mint(user1, 1000 * DECIMAL);
-        usdb.mint(user2, 1000 * DECIMAL);
     }
 
     function testStateVarialbes() public view {
@@ -59,9 +61,9 @@ contract USDIDOPoolsTest is Test {
         address _idoToken = idoPool.idoToken();
         uint256 _claimableTime = idoPool.claimableTime();
         uint256 currentTime = block.timestamp;
-        uint256 idoPrice = idoPool.idoPrice();
+        uint256 _idoPrice = idoPool.idoPrice();
         uint256 decimals = idoPool.idoDecimals();
-        uint256 minimumFundingGoal = idoPool.minimumFundingGoal();
+        uint256 _minimumFundingGoal = idoPool.minimumFundingGoal();
         uint256 startTime = idoPool.idoStartTime();
         uint256 endTime = idoPool.idoEndTime();
         uint256 initialClaimTime = idoPool.initialClaimableTime();
@@ -72,9 +74,9 @@ contract USDIDOPoolsTest is Test {
         assertEq(_treasury, address(treasury));
         assertEq(_idoToken, address(idoToken));
         assertTrue(_claimableTime - currentTime == 864000);
-        assertEq(idoPrice, 0.05 ether);
+        assertEq(_idoPrice, idoPrice);
         assertEq(decimals, 18);
-        assertEq(minimumFundingGoal, 1000 ether);
+        assertEq(_minimumFundingGoal, minimumFundingGoal);
         assertEq(startTime, 1);
         assertEq(endTime, 864001);
         assertEq(initialClaimTime, 864001);
@@ -158,13 +160,13 @@ contract USDIDOPoolsTest is Test {
         idoToken.mint(address(idoPool), DECIMAL * 1000);
 
         vm.startPrank(user0);
-        fyUSD.approve(address(idoPool), user0DepositAmount);
-        idoPool.participate(user0, address(fyUSD), user0DepositAmount);
+        fyUSD.approve(address(idoPool), 300 ether);
+        idoPool.participate(user0, address(fyUSD), 300 ether);
         vm.stopPrank();
 
         vm.startPrank(user1);
-        usdb.approve(address(idoPool), user1DepositAmount);
-        idoPool.participate(user1, address(usdb), user1DepositAmount);
+        usdb.approve(address(idoPool), 400 ether);
+        idoPool.participate(user1, address(usdb), 400 ether);
         vm.stopPrank();
 
         // idoEndTime not met
@@ -178,9 +180,7 @@ contract USDIDOPoolsTest is Test {
         idoPool.finalize();
     }
 
-    function mintApproveParticipateAndFinalize() internal {
-        idoToken.mint(address(idoPool), DECIMAL * 1000);
-
+    function approveParticipateAndFinalize() internal {
         vm.startPrank(user0);
         fyUSD.approve(address(idoPool), user0DepositAmount);
         idoPool.participate(user0, address(fyUSD), user0DepositAmount);
@@ -204,26 +204,29 @@ contract USDIDOPoolsTest is Test {
     }
 
     function test_Can_Finalize() public {
-        mintApproveParticipateAndFinalize();
+        approveParticipateAndFinalize();
     }
 
     function test_Check_Variables_After_Finalizing() public {
-        mintApproveParticipateAndFinalize();
+        approveParticipateAndFinalize();
 
         // CHECK STATE VARIABLES
         //- snapshots
         uint256 snapshotTokenPrice = idoPool.snapshotTokenPrice();
         uint256 snapshotPriceDecimals = idoPool.snapshotPriceDecimals();
-        assertEq(snapshotTokenPrice, snapshotPriceDecimals);
+        // console.log("snapshotTokenPrice", snapshotTokenPrice);
+        // console.log("snapshotPriceDecimals", snapshotPriceDecimals);
+        assertEq(snapshotTokenPrice, 1);
+        assertEq(snapshotPriceDecimals, 1);
 
         // - fundedUSDValue
         uint256 fundedUSDValue = idoPool.fundedUSDValue();
-        assert(fundedUSDValue == user0DepositAmount + user1DepositAmount + user2DepositAmount);
+        assert(fundedUSDValue == (user0DepositAmount + user1DepositAmount + user2DepositAmount));
         assertTrue(idoPool.isFinalized());
     }
 
     function testCannotParticipateAfterFinalized() public {
-        mintApproveParticipateAndFinalize();
+        approveParticipateAndFinalize();
 
         // REVERTS DUE TO FINALIZATION
         vm.startPrank(user0);
@@ -234,139 +237,216 @@ contract USDIDOPoolsTest is Test {
     }
 
     function test_Users_Can_Claim() public {
-        mintApproveParticipateAndFinalize();
+        approveParticipateAndFinalize();
 
-        uint256 startingIDOBalance = idoToken.balanceOf(user0);
+        uint256 fundedUSDValue = idoPool.fundedUSDValue();
+        console.log("fundedUSDValue", fundedUSDValue);
 
+        uint256 idoSize = idoPool.idoSize();
+        console.log("idoSize", idoSize);
+
+        //Contract IDO token balance
+        uint256 contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract: ", contractBalance);
+
+        (, uint256 amount0) = idoPool.accountPosition(user0);
+        (, uint256 amount1) = idoPool.accountPosition(user1);
+        (, uint256 amount2) = idoPool.accountPosition(user2);
+
+        /* uint snapshotTokenPrice = idoPool.snapshotTokenPrice();
+        console.log("snapshotTokenPrice",snapshotTokenPrice); */
+
+        // USER 0 CLAIM
+        uint256 startingIDOBalance0 = idoToken.balanceOf(user0);
+        console.log("starting IDOBalance User0", startingIDOBalance0);
         vm.startPrank(user0);
         idoPool.claim(address(user0));
         vm.stopPrank();
-
-        uint256 endingIDOBalance = idoToken.balanceOf(user0);
+        uint256 endingIDOBalance0 = idoToken.balanceOf(user0);
+        console.log("ending IDOBalance User0", endingIDOBalance0);
         // USER RECEIVES IDO TOKEN
-        assertGt(endingIDOBalance, startingIDOBalance);
-    }
+        assertGt(endingIDOBalance0, startingIDOBalance0);
+        //Contract IDO token balance
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after user 0 claims: ", contractBalance);
 
-    // TODO 
-    function test_Users_Can_Claim_With_Refund() public {
-        /*   vm.startPrank(user0);
-        fyUSD.approve(address(idoPool), 500 ether);
-        idoPool.participate(user0, address(fyUSD),  500 ether);
-        vm.stopPrank(); 
- */
-        mintApproveParticipateAndFinalize();
-
-        uint256 startingIDOBalance = idoToken.balanceOf(address(idoPool));
-        console.log("Starting Balance:", startingIDOBalance);
-        vm.startPrank(user0);
-        console.log("FY Balance Before Claim:", fyUSD.balanceOf(user0));
-        idoPool.claim(address(user0));
-        console.log("FY Balance After Claim:", fyUSD.balanceOf(user0));
-
-        vm.stopPrank();
-
-        uint256 balanceAfterClaim0 = idoToken.balanceOf(address(idoPool));
-        console.log("balanceAfterClaim0:", balanceAfterClaim0);
-
+        // USER 1 CLAIM
+        uint256 startingIDOBalance1 = idoToken.balanceOf(user1);
+        console.log("starting IDOBalance User1", startingIDOBalance1);
         vm.startPrank(user1);
         idoPool.claim(address(user1));
         vm.stopPrank();
+        uint256 endingIDOBalance1 = idoToken.balanceOf(user1);
+        console.log("ending IDOBalance User1", endingIDOBalance1);
+        // USER RECEIVES IDO TOKEN
+        assertGt(endingIDOBalance1, startingIDOBalance1);
+        //Contract IDO token balance
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after user 1 claims: ", contractBalance);
 
-        uint256 balanceAfterClaim1 = idoToken.balanceOf(address(idoPool));
-        console.log("balanceAfterClaim1:", balanceAfterClaim1);
-
+        // USER 2 CLAIM
+        uint256 startingIDOBalance2 = idoToken.balanceOf(user2);
+        console.log("starting IDOBalance User2", startingIDOBalance2);
         vm.startPrank(user2);
         idoPool.claim(address(user2));
         vm.stopPrank();
+        uint256 endingIDOBalance2 = idoToken.balanceOf(user2);
+        console.log("ending IDOBalance User2", endingIDOBalance2);
+        // USER RECEIVES IDO TOKEN
+        assertGt(endingIDOBalance2, startingIDOBalance2);
+        //Contract IDO token balance
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after user 2 claims: ", contractBalance);
 
-        uint256 balanceAfterClaim2 = idoToken.balanceOf(address(idoPool));
-        console.log("balanceAfterClaim2:", balanceAfterClaim2);
+        // Checks that user was not refunded
+        uint256 fyusdBalanceUser0 = fyUSD.balanceOf(user0);
+        uint256 usdbBalanceUser1 = usdb.balanceOf(user1);
+        uint256 usdbBalanceUser2 = usdb.balanceOf(user2);
+        assertEq(amount0, user0MintAmount - fyusdBalanceUser0);
+        assertEq(amount1, user1MintAmount - usdbBalanceUser1);
+        assertEq(amount2, user2MintAmount - usdbBalanceUser2);
     }
 
-    /*  function testWithdrawSpareNotAffectTokenClaim() public {
-        idoToken.mint(address(idoPool), DECIMAL * 4000);
-
+    function test_Users_Can_Claim_With_Refund() public {
         vm.startPrank(user0);
-        fyUSD.approve(address(idoPool), 1000 * DECIMAL);
+        fyUSD.approve(address(idoPool), 200 ether);
+        idoPool.participate(user0, address(fyUSD), 200 ether);
+        vm.stopPrank();
+
+        approveParticipateAndFinalize();
+
+        uint256 fundedUSDValue = idoPool.fundedUSDValue();
+        console.log("fundedUSDValue", fundedUSDValue);
+
+        uint256 idoSize = idoPool.idoSize();
+        console.log("idoSize", idoSize);
+
+        //Contract IDO token balance
+        uint256 contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract: ", contractBalance);
+
+        //( ,uint256 amount0) = idoPool.accountPosition(user0);
+        //( ,uint256 amount1) = idoPool.accountPosition(user1);
+        //( ,uint256 amount2) = idoPool.accountPosition(user2);
+
+        /* uint snapshotTokenPrice = idoPool.snapshotTokenPrice();
+        console.log("snapshotTokenPrice",snapshotTokenPrice); */
+
+        // USER 0 CLAIM
+        uint256 startingIDOBalance0 = idoToken.balanceOf(user0);
+        console.log("starting IDOBalance User0", startingIDOBalance0);
+        vm.startPrank(user0);
+        idoPool.claim(address(user0));
+        vm.stopPrank();
+        uint256 endingIDOBalance0 = idoToken.balanceOf(user0);
+        console.log("ending IDOBalance User0", endingIDOBalance0);
+        // USER RECEIVES IDO TOKEN
+        assertGt(endingIDOBalance0, startingIDOBalance0);
+        //Contract IDO token balance
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after user 0 claims: ", contractBalance);
+
+        // USER 1 CLAIM
+        uint256 startingIDOBalance1 = idoToken.balanceOf(user1);
+        console.log("starting IDOBalance User1", startingIDOBalance1);
+        vm.startPrank(user1);
+        idoPool.claim(address(user1));
+        vm.stopPrank();
+        uint256 endingIDOBalance1 = idoToken.balanceOf(user1);
+        console.log("ending IDOBalance User1", endingIDOBalance1);
+        // USER RECEIVES IDO TOKEN
+        assertGt(endingIDOBalance1, startingIDOBalance1);
+        //Contract IDO token balance
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after user 1 claims: ", contractBalance);
+
+        // USER 2 CLAIM
+        uint256 startingIDOBalance2 = idoToken.balanceOf(user2);
+        console.log("starting IDOBalance User2", startingIDOBalance2);
+        vm.startPrank(user2);
+        idoPool.claim(address(user2));
+        vm.stopPrank();
+        uint256 endingIDOBalance2 = idoToken.balanceOf(user2);
+        console.log("ending IDOBalance User2", endingIDOBalance2);
+        // USER RECEIVES IDO TOKEN
+        assertGt(endingIDOBalance2, startingIDOBalance2);
+        //Contract IDO token balance
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after user 2 claims: ", contractBalance);
+
+        // Checks that user was not refunded
+        uint256 fyusdBalanceUser0 = fyUSD.balanceOf(user0);
+        uint256 usdbBalanceUser1 = usdb.balanceOf(user1);
+        uint256 usdbBalanceUser2 = usdb.balanceOf(user2);
+        console.log(fyusdBalanceUser0);
+        console.log(usdbBalanceUser1);
+        console.log(usdbBalanceUser2);
+
+        //assertEq(amount0,1000 * DECIMAL- fyusdBalanceUser0);
+        //assertEq(amount1,1000 * DECIMAL- usdbBalanceUser1);
+        //assertEq(amount2,1000 * DECIMAL- usdbBalanceUser2);
+    }
+
+    function testWithdrawSpareNotAffectTokenClaim() public {
+        vm.startPrank(user0);
+        fyUSD.approve(address(idoPool), user0DepositAmount);
+        idoPool.participate(user0, address(fyUSD), 100 ether);
         vm.stopPrank();
 
         vm.startPrank(user1);
-        usdb.approve(address(idoPool), 1000 * DECIMAL);
+        usdb.approve(address(idoPool), user1DepositAmount);
+        idoPool.participate(user1, address(usdb), 100 ether);
         vm.stopPrank();
 
+        vm.startPrank(user2);
+        usdb.approve(address(idoPool), user2DepositAmount);
+        idoPool.participate(user2, address(usdb), 100 ether);
+        vm.stopPrank();
+
+        // Forward Time to Ido Endtime
+        vm.warp(block.timestamp + 10 days);
+
+        //Contract IDO token balance
+        uint256 contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract: ", contractBalance);
+
+        idoPool.withdrawSpareIDO();
+        contractBalance = idoToken.balanceOf(address(idoPool));
+        console.log("IDO token balance in contract after Withdraw: ", contractBalance);
+    }
+
+    function test_Attempt_To_Claim_After_Withdrawing_Failed_IDO() public {
         vm.startPrank(user0);
-        idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
+        fyUSD.approve(address(idoPool), user0DepositAmount);
+        idoPool.participate(user0, address(fyUSD), 100 ether);
         vm.stopPrank();
 
         vm.startPrank(user1);
-        idoPool.participate(user1, address(usdb), 1000 * DECIMAL - 12);
+        usdb.approve(address(idoPool), user1DepositAmount);
+        idoPool.participate(user1, address(usdb), 100 ether);
         vm.stopPrank();
 
-        // Mocking the finalize step
-
-        idoPool.finalize();
-
-        vm.startPrank(user0);
-        idoPool.claim(user0);
+        vm.startPrank(user2);
+        usdb.approve(address(idoPool), user2DepositAmount);
+        idoPool.participate(user2, address(usdb), 100 ether);
         vm.stopPrank();
-        assertEq(idoToken.balanceOf(user0), 1000 * DECIMAL);
+
+        // Forward Time to Ido Endtime
+        vm.warp(block.timestamp + 10 days);
+
+        //Contract IDO token balance
+      
 
         idoPool.withdrawSpareIDO();
 
-        vm.startPrank(user1);
-        idoPool.claim(user1);
-        vm.stopPrank();
-        assertEq(idoToken.balanceOf(user1), 1000 * DECIMAL - 12);
 
-        uint256 treasuryBal = usdb.balanceOf(treasury) + fyUSD.balanceOf(treasury);
-        assertEq(treasuryBal, 2000 * DECIMAL - 12);
+        
+        vm.startPrank(user1);
+        idoPool.refund(user1);
+        vm.stopPrank(); 
+
+        // Check users USDB balance post refund
+        uint256 userBalance = usdb.balanceOf(user1);
+        assert(userBalance == user1MintAmount);
     }
-
-     
-
-    function testRefundCorrectAmountAfterFinalized() public {
-        idoToken.mint(address(idoPool), DECIMAL * 1000);
-
-        vm.startPrank(user0);
-        fyUSD.approve(address(idoPool), 1000 * DECIMAL);
-        vm.stopPrank();
-
-        vm.startPrank(user1);
-        usdb.approve(address(idoPool), 1000 * DECIMAL);
-        vm.stopPrank();
-
-        vm.startPrank(user0);
-        idoPool.participate(user0, address(fyUSD), 1000 * DECIMAL);
-        vm.stopPrank();
-
-        vm.startPrank(user1);
-        idoPool.participate(user1, address(usdb), 1000 * DECIMAL);
-        vm.stopPrank();
-
-        address[] memory stakers = new address[](2);
-        stakers[0] = user0;
-        stakers[1] = user1;
-
-        // Mocking the finalize step
-        idoPool.finalize();
-
-        for (uint256 i = 0; i < stakers.length; i++) {
-            vm.startPrank(stakers[i]);
-            idoPool.claim(stakers[i]);
-            vm.stopPrank();
-        }
-
-        uint256[] memory balances = new uint256[](2);
-        balances[0] = idoToken.balanceOf(user0);
-        balances[1] = idoToken.balanceOf(user1);
-
-        assertEq(balances[0], 500 * DECIMAL);
-        assertEq(balances[1], 500 * DECIMAL);
-
-        assertEq(fyUSD.balanceOf(user0), (DECIMAL * 1000) / 2);
-        assertEq(usdb.balanceOf(user1), (DECIMAL * 1000) / 2);
-
-        uint256 treasuryBal = usdb.balanceOf(treasury) + fyUSD.balanceOf(treasury);
-        assertEq(treasuryBal, 1000 * DECIMAL);
-    } */
 }

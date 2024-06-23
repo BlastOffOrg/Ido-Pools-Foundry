@@ -13,6 +13,7 @@ interface IIDOPool {
     error FudingGoalNotReached();
     error IDONotEnded();
     error NotClaimable();
+    error IDO_Still_Active();
 
     struct Position {
         uint256 fyAmount;

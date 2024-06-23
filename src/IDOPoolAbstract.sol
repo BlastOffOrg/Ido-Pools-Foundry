@@ -31,6 +31,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     uint256 public initialClaimableTime;
     uint256 public initialIdoEndTime;
 
+    bool public withdrawn;
+
     modifier notFinalized() {
         if (isFinalized) revert AlreadyFinalized();
         _;
@@ -81,7 +83,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         address buyToken_,
         address fyToken_,
         address idoToken_,
-        // uint256 idoDecimals_,
         address treasury_,
         uint256 idoStartTime_,
         uint256 idoEndTime_,
@@ -101,6 +102,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         idoPrice = price_;
         claimableTime = claimableTime_;
         initialClaimableTime = claimableTime_;
+        idoSize = IERC20(idoToken).balanceOf(address(this));
     }
 
     function setIDOToken(address _token) external onlyOwner {
@@ -119,7 +121,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      */
     function finalize() external onlyOwner notFinalized {
         // removed idoSize here and hardcoded at initialization
-        idoSize = IERC20(idoToken).balanceOf(address(this));
+
         (snapshotTokenPrice, snapshotPriceDecimals) = _getTokenUSDPrice();
         fundedUSDValue = ((totalFunded[buyToken] + totalFunded[fyToken]) * snapshotTokenPrice) / snapshotPriceDecimals;
         if (block.timestamp < idoEndTime) revert IDONotEnded();
@@ -147,7 +149,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
             return (buyAlloc, 0);
-        } else {  
+        } else {
             // Ensure that the division rounds down
             //uint256 exceedAllocInUSD = (exceedAlloc * idoExp);
             // Calculate the truncated value to handle rounding
@@ -239,7 +241,30 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 totalBought = fundedUSDValue / idoPrice * (10 ** idoDecimals);
         uint256 idoBal = IERC20(idoToken).balanceOf(address(this));
         uint256 spare = idoBal - totalBought;
+        withdrawn = true;
         TokenTransfer._transferToken(idoToken, msg.sender, spare);
+    }
+
+    function refund(address receipient) external {
+        if (!withdrawn) revert IDO_Still_Active();
+        Position storage position = accountPosition[receipient];
+        uint256 fyAmount = position.fyAmount;
+        uint256 amount = position.amount;
+
+        require(amount > 0, "No funds to refund");
+        // Reset the user's position
+        delete accountPosition[receipient];
+
+        // Transfer the fyUSD amount back to the user
+        if (fyAmount > 0) {
+            TokenTransfer._transferToken(fyToken, receipient, fyAmount);
+        }
+
+        // Calculate the usdb amount and transfer it back to the user
+        uint256 usdbAmount = amount - fyAmount;
+        if (usdbAmount > 0) {
+            TokenTransfer._transferToken(buyToken, receipient, usdbAmount);
+        }
     }
 
     function delayClaimableTime(uint256 _newTime) external onlyOwner {
