@@ -7,256 +7,307 @@ import "./lib/TokenTransfer.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
-    address public buyToken;
-    address public fyToken;
     address public treasury;
 
-    address public idoToken;
-    bool public isFinalized;
-    uint256 public claimableTime;
+    struct Position {
+        uint256 amount; // Total amount funded
+        uint256 fyAmount; // Amount funded in fyToken
+    }
 
-    uint256 public idoPrice; // expected price of ido decimal is ido token decimal
-    uint256 public idoSize; // total amount of ido token
-    uint256 public snapshotTokenPrice;
-    uint256 public snapshotPriceDecimals;
-    uint256 public fundedUSDValue;
-    uint256 public idoDecimals;
-    mapping(address => uint256) public totalFunded;
-    mapping(address => Position) public accountPosition;
+    struct IDO {
+        string idoName;
+        address idoToken;
+        address buyToken;
+        address fyToken;
+        uint256 idoPrice;
+        uint256 idoSize;
+        uint256 idoStartTime;
+        uint256 idoEndTime;
+        uint256 minimumFundingGoal;
+        uint256 fundedUSDValue;
+        uint256 claimableTime;
+        uint256 initialClaimableTime;
+        uint256 initialIdoEndTime;
+        uint8 idoTokenDecimals;
+        bool isFinalized;
+        mapping(address => uint256) totalFunded;
+        mapping(address => Position) accountPositions;
+    }
 
-    uint256 public minimumFundingGoal;
-    uint256 public idoStartTime;
-    uint256 public idoEndTime;
+    mapping(uint256 => IDO) public idos;
+    uint256 public nextIdoId;
 
-    uint256 public initialClaimableTime;
-    uint256 public initialIdoEndTime;
-
-    modifier notFinalized() {
-        if (isFinalized) revert AlreadyFinalized();
+    modifier notFinalized(uint256 idoId) {
+        if (idos[idoId].isFinalized) revert AlreadyFinalized();
         _;
     }
 
-    modifier finalized() {
-        if (!isFinalized) revert NotFinalized();
+    modifier finalized(uint256 idoId) {
+        if (!idos[idoId].isFinalized) revert NotFinalized();
         _;
     }
 
-    modifier afterStart() {
-        if (block.timestamp < idoStartTime) revert NotStarted();
+    modifier afterStart(uint256 idoId) {
+        if(block.timestamp < idos[idoId].idoStartTime) revert NotStarted();
         _;
     }
 
-    modifier claimable() {
-        if (!isFinalized) revert NotFinalized();
-        if (block.timestamp < claimableTime) revert NotClaimable();
+    modifier claimable(uint256 idoId) {
+        if (!idos[idoId].isFinalized) revert NotFinalized();
+        if (block.timestamp < idos[idoId].claimableTime) revert NotClaimable();
         _;
     }
 
-    function __IDOPoolAbstract_init(
-        address buyToken_,
-        address fyToken_,
-        address idoToken_,
-        address treasury_,
-        uint256 idoStartTime_,
-        uint256 idoEndTime_,
-        uint256 minimumFundingGoal_,
-        uint256 price_,
-        uint256 claimableTime_
-    ) internal onlyInitializing {
-        __IDOPoolAbstract_init_unchained(
-            buyToken_,
-            fyToken_,
-            idoToken_,
-            treasury_,
-            idoStartTime_,
-            idoEndTime_,
-            minimumFundingGoal_,
-            price_,
-            claimableTime_
-        );
+    function __IDOPoolAbstract_init(address treasury_) internal onlyInitializing {
+        treasury = treasury_;
         __Ownable2Step_init();
     }
 
-    function __IDOPoolAbstract_init_unchained(
-        address buyToken_,
-        address fyToken_,
-        address idoToken_,
-        // uint256 idoDecimals_,
-        address treasury_,
-        uint256 idoStartTime_,
-        uint256 idoEndTime_,
-        uint256 minimumFundingGoal_,
-        uint256 price_,
-        uint256 claimableTime_
-    ) internal onlyInitializing {
-        buyToken = buyToken_;
-        fyToken = fyToken_;
-        idoToken = idoToken_;
-        idoDecimals = ERC20(idoToken_).decimals();
-        treasury = treasury_;
-        idoStartTime = idoStartTime_;
-        idoEndTime = idoEndTime_;
-        initialIdoEndTime = idoEndTime_;
-        minimumFundingGoal = minimumFundingGoal_;
-        idoPrice = price_;
-        claimableTime = claimableTime_;
-        initialClaimableTime = claimableTime_;
-    }
+    function createIDO(
+        string memory idoName,
+        address idoToken,
+        address buyToken,
+        address fyToken,
+        uint256 idoPrice,
+        uint256 idoSize,
+        uint256 idoStartTime,
+        uint256 idoEndTime,
+        uint256 minimumFundingGoal,
+        uint256 claimableTime,
+        uint256 initialClaimableTime,
+        uint256 initialIdoEndTime
+    ) external onlyOwner {
+        require(idoEndTime > idoStartTime, "End time must be after start time");
+        IDO storage ido = idos[nextIdoId];
+        ido.idoName = idoName;
+        ido.idoToken = idoToken;
+        ido.buyToken = buyToken;
+        ido.fyToken = fyToken;
+        ido.idoPrice = idoPrice;
+        ido.idoSize = idoSize;
+        ido.idoStartTime = idoStartTime;
+        ido.idoEndTime = idoEndTime;
+        ido.minimumFundingGoal = minimumFundingGoal;
+        ido.claimableTime = claimableTime;
+        ido.initialClaimableTime = claimableTime;
+        ido.initialIdoEndTime = idoEndTime;
+        ido.idoTokenDecimals = ERC20(idoToken).decimals();
+        ido.isFinalized = false;
+        
+        emit IDOCreated(nextIdoId, idoName, idoToken, idoPrice, idoSize, idoStartTime, idoEndTime, minimumFundingGoal, claimableTime);
 
-    function setIDOToken(address _token) external onlyOwner {
-        if (isFinalized) revert("InvalidToken");
-        idoToken = _token;
-        idoDecimals = ERC20(_token).decimals();
+        nextIdoId++;
+
+
     }
 
     function _getTokenUSDPrice() internal view virtual returns (uint256 price, uint256 decimals);
 
     /**
-     * @dev finalize the IDO pool
-     * cannot finalize if IDO has not reached end time or minimum funding goal is not reached.
-     *
-     * Finalize will calulate total value of USD funded for IDO and determine IDO size
+     * @notice Finalize the IDO pool for a specific IDO.
+     * @dev This function finalizes the given IDO, calculates the total value of USD funded, and determines the IDO size.
+     * It cannot be finalized if the IDO has not reached its end time or the minimum funding goal is not met.
+     * @param idoId The ID of the IDO to finalize.
      */
-    function finalize() external onlyOwner notFinalized {
-        // removed idoSize here and hardcoded at initialization
-        idoSize = IERC20(idoToken).balanceOf(address(this));
-        (snapshotTokenPrice, snapshotPriceDecimals) = _getTokenUSDPrice();
-        fundedUSDValue = ((totalFunded[buyToken] + totalFunded[fyToken]) * snapshotTokenPrice) / snapshotPriceDecimals;
-        if (block.timestamp < idoEndTime) revert IDONotEnded();
-        else if (fundedUSDValue < minimumFundingGoal) revert FudingGoalNotReached();
-        isFinalized = true;
+    function finalize(uint256 idoId) external onlyOwner notFinalized(idoId) {
+        IDO storage ido = idos[idoId];
+        ido.idoSize = IERC20(ido.idoToken).balanceOf(address(this));
+        (uint256 snapshotTokenPrice, uint256 snapshotPriceDecimals) = _getTokenUSDPrice();
+        ido.fundedUSDValue = ((ido.totalFunded[ido.buyToken] + ido.totalFunded[ido.fyToken]) * snapshotTokenPrice) / snapshotPriceDecimals;
+        
+        if (block.timestamp < ido.idoEndTime) revert IDONotEnded();
+        if (ido.fundedUSDValue < ido.minimumFundingGoal) revert FudingGoalNotReached();
+        
+        ido.isFinalized = true;
 
-        emit Finalized(idoSize, fundedUSDValue);
+        emit Finalized(ido.idoSize, ido.fundedUSDValue);
     }
 
+
     /**
-     * @dev Calculate amount of IDO token receivable by staker
-     * @param pos position of staker
-     * and amount of stake token to return after finalization
-     * @return allocated
-     * @return excessive
+     * @notice Calculate the amount of IDO tokens receivable by the staker for a specific IDO.
+     * @dev This function calculates the allocated and excessive amounts of IDO tokens for the staker based on their position.
+     * @dev might use `IDO memory ido` if it helps save gas.`
+     * @param idoId The ID of the IDO.
+     * @param pos The position of the staker.
+     * @return allocated The amount of IDO tokens allocated to the staker.
+     * @return excessive The amount of excess funds to be refunded to the staker.
      */
-    function _getPositionValue(Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
-        uint256 posInUSD = (pos.amount * snapshotTokenPrice) / snapshotPriceDecimals; // position value in USD
+    function _getPositionValue(uint256 idoId, Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
+        IDO storage ido = idos[idoId];
+        uint256 posInUSD = (pos.amount * ido.fundedUSDValue) / ido.idoPrice; // position value in USD
 
-        uint256 idoExp = 10 ** idoDecimals;
-        // amount of ido received if exceeded funding goal
-        uint256 exceedAlloc = (idoSize * posInUSD) / fundedUSDValue;
-        // amount of ido token received if not exceeded goal
-        uint256 buyAlloc = (posInUSD * idoExp) / idoPrice;
+        uint256 idoExp = 10 ** ido.idoTokenDecimals;
+        // amount of IDO received if exceeded funding goal
+        uint256 exceedAlloc = (ido.idoSize * posInUSD) / ido.fundedUSDValue;
+        // amount of IDO token received if not exceeded goal
+        uint256 buyAlloc = (posInUSD * idoExp) / ido.idoPrice;
 
-        if ((idoSize * idoPrice / idoExp) >= fundedUSDValue) {
+        if ((ido.idoSize * ido.idoPrice / idoExp) >= ido.fundedUSDValue) {
             return (buyAlloc, 0);
-        } else {  
-            // Ensure that the division rounds down
-            //uint256 exceedAllocInUSD = (exceedAlloc * idoExp);
-            // Calculate the truncated value to handle rounding
-            //uint256 truncatedValue = exceedAllocInUSD / idoPrice;
-            //uint256 excessiveInUSD = posInUSD > truncatedValue ? posInUSD - truncatedValue : 0;
-
-            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / idoPrice); // Incorrect
-            uint256 excessiveTokens = (excessiveInUSD * snapshotPriceDecimals) / snapshotTokenPrice;
+        } else {
+            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / ido.idoPrice);
+            uint256 excessiveTokens = (excessiveInUSD * ido.fundedUSDValue) / ido.idoPrice;
             return (exceedAlloc, excessiveTokens);
         }
     }
 
-    /**
-     * @dev Refund staker after claim and transfer fund to treasury
-     *
-     * @param pos position of staker
-     * @param staker staker to refund
-     * @param excessAmount amount to refund
+        /**
+     * @notice Refund staker after claim and transfer remaining funds to the treasury for a specific IDO.
+     * @dev This function refunds the staker any excess funds and transfers the remaining funds to the treasury.
+     * @dev might use `IDO memory ido` if it helps save gas.`
+     * @param idoId The ID of the IDO.
+     * @param pos The position of the staker.
+     * @param staker The address of the staker to refund.
+     * @param excessAmount The amount to refund to the staker.
      */
-    function _refundPostition(Position memory pos, address staker, uint256 excessAmount) internal {
+    function _refundPosition(uint256 idoId, Position memory pos, address staker, uint256 excessAmount) internal {
+        IDO storage ido = idos[idoId];
         if (excessAmount <= pos.fyAmount) {
-            TokenTransfer._transferToken(fyToken, staker, excessAmount);
-            TokenTransfer._transferToken(fyToken, treasury, pos.fyAmount - excessAmount);
-            TokenTransfer._transferToken(buyToken, treasury, pos.amount - pos.fyAmount);
+            TokenTransfer._transferToken(ido.fyToken, staker, excessAmount);
+            TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount - excessAmount);
+            TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
         } else {
-            TokenTransfer._transferToken(fyToken, staker, pos.fyAmount);
-            TokenTransfer._transferToken(buyToken, staker, excessAmount - pos.fyAmount);
-            TokenTransfer._transferToken(buyToken, treasury, pos.amount - excessAmount);
+            TokenTransfer._transferToken(ido.fyToken, staker, pos.fyAmount);
+            TokenTransfer._transferToken(ido.buyToken, staker, excessAmount - pos.fyAmount);
+            TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - excessAmount);
         }
     }
 
-    function _depositToTreasury(Position memory pos) internal {
-        TokenTransfer._transferToken(fyToken, treasury, pos.fyAmount);
-        TokenTransfer._transferToken(buyToken, treasury, pos.amount - pos.fyAmount);
-    }
-
     /**
-     * @dev Participate in IDO
-     *
-     * @param receipient address to participate in IDO
-     * @param token address of token used to particpate, must be either buyToken or fyToken
-     * @param amount amount of token to participate
+     * @notice Transfer the staker's funds to the treasury for a specific IDO.
+     * @dev This function transfers the staker's funds to the treasury.
+     * @param idoId The ID of the IDO.
+     * @param pos The position of the staker.
      */
-    function participate(address receipient, address token, uint256 amount) external payable notFinalized afterStart {
-        if (token != buyToken && token != fyToken) {
+    function _depositToTreasury(uint256 idoId, Position memory pos) internal {
+        IDO storage ido = idos[idoId];
+        TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount);
+        TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
+    }
+    
+    
+    /**
+     * @notice Participate in a specific IDO.
+     * @dev This function allows a recipient to participate in a given IDO by contributing a specified amount of tokens.
+     * The token used for participation must be either the buyToken or fyToken of the IDO.
+     * @param idoId The ID of the IDO to participate in.
+     * @param recipient The address of the recipient participating in the IDO.
+     * @param token The address of the token used to participate, must be either the buyToken or fyToken.
+     * @param amount The amount of the token to participate with.
+     */
+    function participate(
+        uint256 idoId, 
+        address recipient, 
+        address token, 
+        uint256 amount
+    ) external payable notFinalized(idoId) afterStart(idoId) {
+        IDO storage ido = idos[idoId];
+        if (token != ido.buyToken && token != ido.fyToken) {
             revert InvalidParticipateToken(token);
         }
-        Position storage position = accountPosition[receipient];
-        if (token == fyToken) {
+
+        Position storage position = ido.accountPositions[recipient];
+        if (token == ido.fyToken) {
             position.fyAmount += amount;
         }
 
         position.amount += amount;
-        totalFunded[token] += amount;
+        ido.totalFunded[token] += amount;
 
-        // take token from transaction sender to register receipient
+        // take token from transaction sender to register recipient
         TokenTransfer._depositToken(token, msg.sender, amount);
-        emit Participation(receipient, token, amount);
+        emit Participation(recipient, token, amount);
     }
 
+
     /**
-     * @dev Claim refund and IDO token
-     *
-     * @param staker address of staker to claim IDO token1
+     * @notice Claim refund and IDO tokens for a specific IDO.
+     * @dev This function allows a staker to claim their allocated IDO tokens and any excess funds for a given IDO.
+     * @param idoId The ID of the IDO.
+     * @param staker The address of the staker claiming the IDO tokens.
      */
-    function claim(address staker) external claimable {
-        Position memory pos = accountPosition[staker];
+    function claim(uint256 idoId, address staker) external claimable(idoId) {
+        IDO storage ido = idos[idoId];
+        Position memory pos = ido.accountPositions[staker];
         if (pos.amount == 0) revert NoStaking();
 
-        (uint256 alloc, uint256 excessive) = _getPositionValue(pos);
+        (uint256 alloc, uint256 excessive) = _getPositionValue(idoId, pos);
 
-        delete accountPosition[staker];
+        delete ido.accountPositions[staker];
 
-        if (excessive > 0) _refundPostition(pos, staker, excessive);
-        else _depositToTreasury(pos);
+        if (excessive > 0) _refundPosition(idoId, pos, staker, excessive);
+        else _depositToTreasury(idoId, pos);
 
-        TokenTransfer._transferToken(idoToken, staker, alloc);
+        TokenTransfer._transferToken(ido.idoToken, staker, alloc);
 
         emit Claim(staker, alloc, excessive);
     }
 
     /**
-     * @dev Withdraw remaining IDO token if funding goal is not reached
+     * @notice Withdraw remaining IDO tokens if the funding goal is not reached.
+     * @dev This function allows the owner to withdraw unsold IDO tokens if the funding goal is not reached.
+     * @param idoId The ID of the IDO.
      */
-    function withdrawSpareIDO() external notFinalized onlyOwner {
-        uint256 totalIDOGoal = (idoSize * idoPrice) / (10 ** idoDecimals);
-        if (totalIDOGoal <= fundedUSDValue) revert();
+    function withdrawSpareIDO(uint256 idoId) external notFinalized(idoId) onlyOwner {
+        IDO storage ido = idos[idoId];
+        uint8 decimals = ido.idoTokenDecimals;
+        uint256 totalIDOGoal = (ido.idoSize * ido.idoPrice) / (10 ** decimals);
+        if (totalIDOGoal <= ido.fundedUSDValue) revert FudingGoalNotReached();
 
-        uint256 totalBought = fundedUSDValue / idoPrice * (10 ** idoDecimals);
-        uint256 idoBal = IERC20(idoToken).balanceOf(address(this));
+        uint256 totalBought = ido.fundedUSDValue / ido.idoPrice * (10 ** decimals);
+        uint256 idoBal = IERC20(ido.idoToken).balanceOf(address(this));
         uint256 spare = idoBal - totalBought;
-        TokenTransfer._transferToken(idoToken, msg.sender, spare);
+        TokenTransfer._transferToken(ido.idoToken, msg.sender, spare);
     }
 
-    function delayClaimableTime(uint256 _newTime) external onlyOwner {
-        require(_newTime > claimableTime, "New claimable time must be after current claimable time");
+    /**
+     * @notice Delays the claimable time for a specific IDO.
+     * @dev This function updates the claimable time for the given IDO to a new time, provided the new time is 
+     * later than the current claimable time and does not exceed two weeks from the initial claimable time.
+     * @param idoId The ID of the IDO to update.
+     * @param _newTime The new claimable time to set.
+     */
+    function delayClaimableTime(uint256 idoId, uint256 _newTime) external onlyOwner {
+        IDO storage ido = idos[idoId];
+        require(_newTime > ido.initialClaimableTime, "New claimable time must be after current claimable time");
         require(
-            _newTime <= initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
+            _newTime <= ido.initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
         );
-        emit ClaimableTimeDelayed(claimableTime, _newTime);
+        emit ClaimableTimeDelayed(ido.claimableTime, _newTime);
 
-        claimableTime = _newTime;
+        ido.claimableTime = _newTime;
     }
 
-    function delayIdoEndTime(uint256 _newTime) external onlyOwner {
-        require(_newTime > idoEndTime, "New IDO end time must be after current IDO end time");
-        require(_newTime <= initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
-        emit IdoEndTimeDelayed(idoEndTime, _newTime);
+    /**
+     * @notice Delays the end time for a specific IDO.
+     * @dev This function updates the end time for the given IDO to a new time, provided the new time is later 
+     * than the current end time and does not exceed two weeks from the initial end time.
+     * @param idoId The ID of the IDO to update.
+     * @param _newTime The new end time to set.
+     */
+    function delayIdoEndTime(uint256 idoId, uint256 _newTime) external onlyOwner {
+        IDO storage ido = idos[idoId];
+        require(_newTime > ido.initialIdoEndTime, "New IDO end time must be after initial IDO end time");
+        require(_newTime <= ido.initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
+        emit IdoEndTimeDelayed(ido.idoEndTime, _newTime);
 
-        idoEndTime = _newTime;
+
+        ido.idoEndTime = _newTime;
     }
+
+
+    /**
+    * @dev Returns the name of the IDO associated with the given idoId.
+    * @param idoId The ID of the IDO.
+    * @return idoName The name of the IDO.
+    */
+    function getIdoName(uint256 idoId) public view returns (string memory) {
+        require(idoId < nextIdoId, "IDO does not exist");
+        return idos[idoId].idoName;
+    }
+
+
 }
+
+

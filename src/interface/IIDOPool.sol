@@ -14,11 +14,6 @@ interface IIDOPool {
     error IDONotEnded();
     error NotClaimable();
 
-    struct Position {
-        uint256 fyAmount;
-        uint256 amount;
-    }
-
     event Participation(address indexed account, address token, uint256 amount);
 
     event Claim(address indexed account, uint256 idoAmount, uint256 refundAmount);
@@ -27,7 +22,6 @@ interface IIDOPool {
     event IdoEndTimeDelayed(uint256 previousTime, uint256 newTime);
     event Finalized(uint256 idoSize, uint256 fundedUSDValue);
 
-    function participate(address recipient, address token, uint256 amount) external payable;
+    event IDOCreated(uint256 indexed idoId, string idoName, address idoToken, uint256 idoPrice, uint256 idoSize, uint256 idoStartTime, uint256 idoEndTime, uint256 minimumFundingGoal, uint256 claimableTime);
 
-    function claim(address staker) external;
 }
