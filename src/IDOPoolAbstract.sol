@@ -73,9 +73,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 idoStartTime,
         uint256 idoEndTime,
         uint256 minimumFundingGoal,
-        uint256 claimableTime,
-        uint256 initialClaimableTime,
-        uint256 initialIdoEndTime
+        uint256 claimableTime
     ) external onlyOwner {
         require(idoEndTime > idoStartTime, "End time must be after start time");
         IDO storage ido = idos[nextIdoId];
@@ -195,7 +193,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param recipient The address of the recipient participating in the IDO.
      * @param token The address of the token used to participate, must be either the buyToken or fyToken.
      * @param amount The amount of the token to participate with.
-     */
+    */ 
     function participate(
         uint256 idoId, 
         address recipient, 
@@ -227,6 +225,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param idoId The ID of the IDO.
      * @param staker The address of the staker claiming the IDO tokens.
      */
+
     function claim(uint256 idoId, address staker) external claimable(idoId) {
         IDO storage ido = idos[idoId];
         Position memory pos = ido.accountPositions[staker];
