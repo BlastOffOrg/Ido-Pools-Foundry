@@ -21,7 +21,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 idoEndTime;
         uint64 initialIdoEndTime;
         bool isFinalized;
-        bool hasWhitelist; // TODO Implement a whitelist function and a check for whitelisted IDOs
+        bool hasWhitelist; 
     }
 
     struct IDOConfig {
@@ -33,6 +33,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 idoSize;
         uint256 minimumFundingGoal;
         uint256 fundedUSDValue;
+        mapping(address => bool) whitelist;
         mapping(address => uint256) totalFunded;
         mapping(address => Position) accountPositions;
     }
@@ -81,6 +82,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 claimableTime
     ) external onlyOwner {
         require(idoEndTime > idoStartTime, "End time must be after start time");
+        require(claimableTime > idoEndTime, "Claim time must be after end time");
         uint32 idoId = nextIdoId ++; // postfix increment
         idoClocks[idoId] = IDOClock({
             idoStartTime: idoStartTime,
@@ -134,6 +136,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @notice Calculate the amount of IDO tokens receivable by the staker for a specific IDO.
      * @dev This function calculates the allocated and excessive amounts of IDO tokens for the staker based on their position.
      * @dev might use `IDO memory ido` if it helps save gas.`
+     * @dev TODO fix the precision loss of 1 in the `exessiveTokens`. 
      * @param idoId The ID of the IDO.
      * @param pos The position of the staker.
      * @return allocated The amount of IDO tokens allocated to the staker.
@@ -301,6 +304,42 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
 
         ido.idoEndTime = _newTime;
+    }
+
+    /**
+     * @notice Modifies the whitelist status for a list of participants for a specific IDO.
+     * @dev Adds or removes addresses from the whitelist mapping in the IDOConfig for the specified IDO, based on the flag.
+     * @param idoId The ID of the IDO.
+     * @param participants The array of addresses of the participants to modify.
+     * @param addToWhitelist True to add to the whitelist, false to remove from the whitelist.
+     */
+    function modifyWhitelist(uint32 idoId, address[] calldata participants, bool addToWhitelist) external onlyOwner {
+        require(idoClocks[idoId].hasWhitelist, "Whitelist not enabled for this IDO.");
+        require(participants.length > 0, "Participant list cannot be empty.");
+
+        for (uint i = 0; i < participants.length; i++) {
+            idoConfigs[idoId].whitelist[participants[i]] = addToWhitelist;
+        }
+    }
+
+    /**
+     * @notice Sets the whitelist status for a specific IDO.
+     * @dev Enables or disables the whitelist for an IDO. Whitelisting cannot be enabled once the IDO has started.
+     *      Disabling can occur at any time unless the IDO is finalized or the whitelist is already disabled.
+     *      Can only be called by the owner.
+     * @param idoId The ID of the IDO.
+     * @param status True to enable the whitelist, false to disable it.
+     */
+    function setWhitelistStatus(uint32 idoId, bool status) external onlyOwner {
+        if (status) {
+            require(block.timestamp < idoClocks[idoId].idoStartTime, "Cannot enable whitelist after IDO start.");
+        } else {
+            require(!idoClocks[idoId].isFinalized, "IDO is already finalized.");
+            require(idoClocks[idoId].hasWhitelist, "Whitelist is already disabled.");
+        }
+        
+        idoClocks[idoId].hasWhitelist = status;
+        emit WhitelistStatusChanged(idoId, status);
     }
 
 }
