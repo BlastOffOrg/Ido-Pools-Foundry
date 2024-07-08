@@ -14,47 +14,52 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 fyAmount; // Amount funded in fyToken
     }
 
-    struct IDO {
-        string idoName;
+    struct IDOClock {
+        uint64 idoStartTime;
+        uint64 claimableTime;
+        uint64 initialClaimableTime;
+        uint64 idoEndTime;
+        uint64 initialIdoEndTime;
+        bool isFinalized;
+        bool hasWhitelist; // TODO Implement a whitelist function and a check for whitelisted IDOs
+    }
+
+    struct IDOConfig {
         address idoToken;
+        uint8 idoTokenDecimals;
         address buyToken;
         address fyToken;
         uint256 idoPrice;
         uint256 idoSize;
-        uint256 idoStartTime;
-        uint256 idoEndTime;
         uint256 minimumFundingGoal;
         uint256 fundedUSDValue;
-        uint256 claimableTime;
-        uint256 initialClaimableTime;
-        uint256 initialIdoEndTime;
-        uint8 idoTokenDecimals;
-        bool isFinalized;
         mapping(address => uint256) totalFunded;
         mapping(address => Position) accountPositions;
     }
 
-    mapping(uint256 => IDO) public idos;
-    uint256 public nextIdoId;
+    mapping(uint32 => IDOClock) public idoClocks;
+    mapping(uint32 => IDOConfig) public idoConfigs;
 
-    modifier notFinalized(uint256 idoId) {
-        if (idos[idoId].isFinalized) revert AlreadyFinalized();
+    uint32 public nextIdoId = 1;
+
+    modifier notFinalized(uint32 idoId) {
+        if (idoClocks[idoId].isFinalized) revert AlreadyFinalized();
         _;
     }
 
-    modifier finalized(uint256 idoId) {
-        if (!idos[idoId].isFinalized) revert NotFinalized();
+    modifier finalized(uint32 idoId) {
+        if (!idoClocks[idoId].isFinalized) revert NotFinalized();
         _;
     }
 
-    modifier afterStart(uint256 idoId) {
-        if(block.timestamp < idos[idoId].idoStartTime) revert NotStarted();
+    modifier afterStart(uint32 idoId) {
+        if(block.timestamp < idoClocks[idoId].idoStartTime) revert NotStarted();
         _;
     }
 
-    modifier claimable(uint256 idoId) {
-        if (!idos[idoId].isFinalized) revert NotFinalized();
-        if (block.timestamp < idos[idoId].claimableTime) revert NotClaimable();
+    modifier claimable(uint32 idoId) {
+        if (!idoClocks[idoId].isFinalized) revert NotFinalized();
+        if (block.timestamp < idoClocks[idoId].claimableTime) revert NotClaimable();
         _;
     }
 
@@ -64,39 +69,41 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     }
 
     function createIDO(
-        string memory idoName,
+        string calldata idoName,
         address idoToken,
         address buyToken,
         address fyToken,
         uint256 idoPrice,
         uint256 idoSize,
-        uint256 idoStartTime,
-        uint256 idoEndTime,
         uint256 minimumFundingGoal,
-        uint256 claimableTime
+        uint64 idoStartTime,
+        uint64 idoEndTime,
+        uint64 claimableTime
     ) external onlyOwner {
         require(idoEndTime > idoStartTime, "End time must be after start time");
-        IDO storage ido = idos[nextIdoId];
-        ido.idoName = idoName;
-        ido.idoToken = idoToken;
-        ido.buyToken = buyToken;
-        ido.fyToken = fyToken;
-        ido.idoPrice = idoPrice;
-        ido.idoSize = idoSize;
-        ido.idoStartTime = idoStartTime;
-        ido.idoEndTime = idoEndTime;
-        ido.minimumFundingGoal = minimumFundingGoal;
-        ido.claimableTime = claimableTime;
-        ido.initialClaimableTime = claimableTime;
-        ido.initialIdoEndTime = idoEndTime;
-        ido.idoTokenDecimals = ERC20(idoToken).decimals();
-        ido.isFinalized = false;
+        uint32 idoId = nextIdoId ++; // postfix increment
+        idoClocks[idoId] = IDOClock({
+            idoStartTime: idoStartTime,
+            claimableTime: claimableTime,
+            initialClaimableTime: claimableTime,
+            idoEndTime: idoEndTime,
+            initialIdoEndTime: idoEndTime,
+            isFinalized: false,
+            hasWhitelist: false  
+        });
+
+        //IDOConfig needs to be assigned like this, Nested mapping error.
+        IDOConfig storage config = idoConfigs[idoId];
+        config.idoToken = idoToken;
+        config.idoTokenDecimals = ERC20(idoToken).decimals();
+        config.buyToken = buyToken;
+        config.fyToken = fyToken;
+        config.idoPrice = idoPrice;
+        config.idoSize = idoSize;
+        config.minimumFundingGoal = minimumFundingGoal;
+        config.fundedUSDValue = 0;
         
-        emit IDOCreated(nextIdoId, idoName, idoToken, idoPrice, idoSize, idoStartTime, idoEndTime, minimumFundingGoal, claimableTime);
-
-        nextIdoId++;
-
-
+        emit IDOCreated(idoId, idoName, idoToken, idoPrice, idoSize, minimumFundingGoal, idoStartTime, idoEndTime, claimableTime);
     }
 
     function _getTokenUSDPrice() internal view virtual returns (uint256 price, uint256 decimals);
@@ -107,18 +114,19 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * It cannot be finalized if the IDO has not reached its end time or the minimum funding goal is not met.
      * @param idoId The ID of the IDO to finalize.
      */
-    function finalize(uint256 idoId) external onlyOwner notFinalized(idoId) {
-        IDO storage ido = idos[idoId];
-        ido.idoSize = IERC20(ido.idoToken).balanceOf(address(this));
+    function finalize(uint32 idoId) external onlyOwner notFinalized(idoId) {
+        IDOClock storage idoClock = idoClocks[idoId];
+        IDOConfig storage idoConfig = idoConfigs[idoId];
+        idoConfig.idoSize = IERC20(idoConfig.idoToken).balanceOf(address(this));
         (uint256 snapshotTokenPrice, uint256 snapshotPriceDecimals) = _getTokenUSDPrice();
-        ido.fundedUSDValue = ((ido.totalFunded[ido.buyToken] + ido.totalFunded[ido.fyToken]) * snapshotTokenPrice) / snapshotPriceDecimals;
+        idoConfig.fundedUSDValue = ((idoConfig.totalFunded[idoConfig.buyToken] + idoConfig.totalFunded[idoConfig.fyToken]) * snapshotTokenPrice) / snapshotPriceDecimals;
         
-        if (block.timestamp < ido.idoEndTime) revert IDONotEnded();
-        if (ido.fundedUSDValue < ido.minimumFundingGoal) revert FudingGoalNotReached();
+        if (block.timestamp < idoClock.idoEndTime) revert IDONotEnded();
+        if (idoConfig.fundedUSDValue < idoConfig.minimumFundingGoal) revert FudingGoalNotReached();
         
-        ido.isFinalized = true;
+        idoClock.isFinalized = true;
 
-        emit Finalized(ido.idoSize, ido.fundedUSDValue);
+        emit Finalized(idoConfig.idoSize, idoConfig.fundedUSDValue);
     }
 
 
@@ -131,8 +139,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @return allocated The amount of IDO tokens allocated to the staker.
      * @return excessive The amount of excess funds to be refunded to the staker.
      */
-    function _getPositionValue(uint256 idoId, Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
-        IDO storage ido = idos[idoId];
+    function _getPositionValue(uint32 idoId, Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
+        IDOConfig storage ido = idoConfigs[idoId];
         uint256 posInUSD = (pos.amount * ido.fundedUSDValue) / ido.idoPrice; // position value in USD
 
         uint256 idoExp = 10 ** ido.idoTokenDecimals;
@@ -159,8 +167,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param staker The address of the staker to refund.
      * @param excessAmount The amount to refund to the staker.
      */
-    function _refundPosition(uint256 idoId, Position memory pos, address staker, uint256 excessAmount) internal {
-        IDO storage ido = idos[idoId];
+    function _refundPosition(uint32 idoId, Position memory pos, address staker, uint256 excessAmount) internal {
+        IDOConfig storage ido = idoConfigs[idoId];
         if (excessAmount <= pos.fyAmount) {
             TokenTransfer._transferToken(ido.fyToken, staker, excessAmount);
             TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount - excessAmount);
@@ -178,8 +186,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param idoId The ID of the IDO.
      * @param pos The position of the staker.
      */
-    function _depositToTreasury(uint256 idoId, Position memory pos) internal {
-        IDO storage ido = idos[idoId];
+    function _depositToTreasury(uint32 idoId, Position memory pos) internal {
+        IDOConfig storage ido = idoConfigs[idoId];
         TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount);
         TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
     }
@@ -195,12 +203,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param amount The amount of the token to participate with.
     */ 
     function participate(
-        uint256 idoId, 
+        uint32 idoId, 
         address recipient, 
         address token, 
         uint256 amount
     ) external payable notFinalized(idoId) afterStart(idoId) {
-        IDO storage ido = idos[idoId];
+        IDOConfig storage ido = idoConfigs[idoId];
         if (token != ido.buyToken && token != ido.fyToken) {
             revert InvalidParticipateToken(token);
         }
@@ -226,8 +234,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param staker The address of the staker claiming the IDO tokens.
      */
 
-    function claim(uint256 idoId, address staker) external claimable(idoId) {
-        IDO storage ido = idos[idoId];
+    function claim(uint32 idoId, address staker) external claimable(idoId) {
+        IDOConfig storage ido = idoConfigs[idoId];
         Position memory pos = ido.accountPositions[staker];
         if (pos.amount == 0) revert NoStaking();
 
@@ -248,8 +256,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @dev This function allows the owner to withdraw unsold IDO tokens if the funding goal is not reached.
      * @param idoId The ID of the IDO.
      */
-    function withdrawSpareIDO(uint256 idoId) external notFinalized(idoId) onlyOwner {
-        IDO storage ido = idos[idoId];
+    function withdrawSpareIDO(uint32 idoId) external notFinalized(idoId) onlyOwner {
+        IDOConfig storage ido = idoConfigs[idoId];
         uint8 decimals = ido.idoTokenDecimals;
         uint256 totalIDOGoal = (ido.idoSize * ido.idoPrice) / (10 ** decimals);
         if (totalIDOGoal <= ido.fundedUSDValue) revert FudingGoalNotReached();
@@ -267,8 +275,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param idoId The ID of the IDO to update.
      * @param _newTime The new claimable time to set.
      */
-    function delayClaimableTime(uint256 idoId, uint256 _newTime) external onlyOwner {
-        IDO storage ido = idos[idoId];
+    function delayClaimableTime(uint32 idoId, uint64 _newTime) external onlyOwner {
+        IDOClock storage ido = idoClocks[idoId];
         require(_newTime > ido.initialClaimableTime, "New claimable time must be after current claimable time");
         require(
             _newTime <= ido.initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
@@ -285,8 +293,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param idoId The ID of the IDO to update.
      * @param _newTime The new end time to set.
      */
-    function delayIdoEndTime(uint256 idoId, uint256 _newTime) external onlyOwner {
-        IDO storage ido = idos[idoId];
+    function delayIdoEndTime(uint32 idoId, uint64 _newTime) external onlyOwner {
+        IDOClock storage ido = idoClocks[idoId];
         require(_newTime > ido.initialIdoEndTime, "New IDO end time must be after initial IDO end time");
         require(_newTime <= ido.initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
         emit IdoEndTimeDelayed(ido.idoEndTime, _newTime);
@@ -294,18 +302,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         ido.idoEndTime = _newTime;
     }
-
-
-    /**
-    * @dev Returns the name of the IDO associated with the given idoId.
-    * @param idoId The ID of the IDO.
-    * @return idoName The name of the IDO.
-    */
-    function getIdoName(uint256 idoId) public view returns (string memory) {
-        require(idoId < nextIdoId, "IDO does not exist");
-        return idos[idoId].idoName;
-    }
-
 
 }
 

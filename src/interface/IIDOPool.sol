@@ -22,6 +22,6 @@ interface IIDOPool {
     event IdoEndTimeDelayed(uint256 previousTime, uint256 newTime);
     event Finalized(uint256 idoSize, uint256 fundedUSDValue);
 
-    event IDOCreated(uint256 indexed idoId, string idoName, address idoToken, uint256 idoPrice, uint256 idoSize, uint256 idoStartTime, uint256 idoEndTime, uint256 minimumFundingGoal, uint256 claimableTime);
+    event IDOCreated(uint32 indexed idoId, string idoName, address idoToken, uint256 idoPrice, uint256 idoSize, uint256 minimumFundingGoal, uint64 idoStartTime, uint64 idoEndTime, uint64 claimableTime);
 
 }
