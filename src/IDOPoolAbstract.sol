@@ -22,6 +22,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 initialIdoEndTime;
         bool isFinalized;
         bool hasWhitelist; 
+        bool hasExceedCap;
     }
 
     struct IDOConfig {
@@ -91,7 +92,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             idoEndTime: idoEndTime,
             initialIdoEndTime: idoEndTime,
             isFinalized: false,
-            hasWhitelist: false  
+            hasWhitelist: false,
+            hasExceedCap: false
         });
 
         //IDOConfig needs to be assigned like this, Nested mapping error.
@@ -211,18 +213,25 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         address token, 
         uint256 amount
     ) external payable notFinalized(idoId) afterStart(idoId) {
-        IDOConfig storage ido = idoConfigs[idoId];
-        if (token != ido.buyToken && token != ido.fyToken) {
+        IDOConfig storage idoConfig = idoConfigs[idoId];
+        IDOClock storage idoClock = idoClocks[idoId];
+
+        if (token != idoConfig.buyToken && token != idoConfig.fyToken) {
             revert InvalidParticipateToken(token);
         }
 
-        Position storage position = ido.accountPositions[recipient];
-        if (token == ido.fyToken) {
+        uint256 newTotalFunded = idoConfig.totalFunded[token] + amount;
+        if (!idoClock.hasExceedCap) {
+            require(newTotalFunded <= idoConfig.idoSize, "Contribution exceeds IDO cap");
+        }
+
+        Position storage position = idoConfig.accountPositions[recipient];
+        if (token == idoConfig.fyToken) {
             position.fyAmount += amount;
         }
 
         position.amount += amount;
-        ido.totalFunded[token] += amount;
+        idoConfig.totalFunded[token] = newTotalFunded;
 
         // take token from transaction sender to register recipient
         TokenTransfer._depositToken(token, msg.sender, amount);
@@ -340,6 +349,19 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         
         idoClocks[idoId].hasWhitelist = status;
         emit WhitelistStatusChanged(idoId, status);
+    }
+
+    /**
+     * @notice Sets the status of whether an IDO can exceed its predefined cap.
+     * @dev Allows toggling the capability to accept contributions beyond the set IDO cap.
+     *      This setting cannot be changed once the IDO has started to ensure fairness.
+     * @param idoId The identifier for the specific IDO.
+     * @param status True to allow contributions to exceed the cap, false to enforce the cap strictly.
+     */
+    function setCapExceedStatus(uint32 idoId, bool status) external onlyOwner {
+        require(block.timestamp < idoClocks[idoId].idoStartTime, "Cannot change cap status after IDO start.");
+        idoClocks[idoId].hasExceedCap = status;
+        emit CapExceedStatusChanged(idoId, status);
     }
 
 }

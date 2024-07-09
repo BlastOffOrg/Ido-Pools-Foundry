@@ -25,5 +25,5 @@ interface IIDOPool {
     event IDOCreated(uint32 indexed idoId, string idoName, address idoToken, uint256 idoPrice, uint256 idoSize, uint256 minimumFundingGoal, uint64 idoStartTime, uint64 idoEndTime, uint64 claimableTime);
 
     event WhitelistStatusChanged(uint32 indexed idoId, bool status);
-
+    event CapExceedStatusChanged(uint32 indexed idoId, bool status);
 }
