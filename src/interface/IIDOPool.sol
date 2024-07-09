@@ -26,4 +26,5 @@ interface IIDOPool {
 
     event WhitelistStatusChanged(uint32 indexed idoId, bool status);
     event CapExceedStatusChanged(uint32 indexed idoId, bool status);
+    event FyTokenMaxBasisPointsChanged(uint32 indexed idoId, uint16 newFyTokenMaxBasisPoints);
 }

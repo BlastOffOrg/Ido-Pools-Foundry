@@ -28,6 +28,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     struct IDOConfig {
         address idoToken;
         uint8 idoTokenDecimals;
+        uint16 fyTokenMaxBasisPoints;
         address buyToken;
         address fyToken;
         uint256 idoPrice;
@@ -78,6 +79,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 idoPrice,
         uint256 idoSize,
         uint256 minimumFundingGoal,
+        uint16 fyTokenMaxBasisPoints,
         uint64 idoStartTime,
         uint64 idoEndTime,
         uint64 claimableTime
@@ -105,6 +107,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         config.idoPrice = idoPrice;
         config.idoSize = idoSize;
         config.minimumFundingGoal = minimumFundingGoal;
+        config.fyTokenMaxBasisPoints = fyTokenMaxBasisPoints;
         config.fundedUSDValue = 0;
         
         emit IDOCreated(idoId, idoName, idoToken, idoPrice, idoSize, minimumFundingGoal, idoStartTime, idoEndTime, claimableTime);
@@ -201,6 +204,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     /**
      * @notice Participate in a specific IDO.
      * @dev This function allows a recipient to participate in a given IDO by contributing a specified amount of tokens.
+     * Checks have been delegated to the `_participationCheck` function
      * The token used for participation must be either the buyToken or fyToken of the IDO.
      * @param idoId The ID of the IDO to participate in.
      * @param recipient The address of the recipient participating in the IDO.
@@ -214,18 +218,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 amount
     ) external payable notFinalized(idoId) afterStart(idoId) {
         IDOConfig storage idoConfig = idoConfigs[idoId];
-        IDOClock storage idoClock = idoClocks[idoId];
 
-        if (token != idoConfig.buyToken && token != idoConfig.fyToken) {
-            revert InvalidParticipateToken(token);
-        }
-
-        uint256 newTotalFunded = idoConfig.totalFunded[token] + amount;
-        if (!idoClock.hasExceedCap) {
-            require(newTotalFunded <= idoConfig.idoSize, "Contribution exceeds IDO cap");
-        }
+        _participationCheck(idoId, recipient, token, amount); // Perform all participation checks
 
         Position storage position = idoConfig.accountPositions[recipient];
+        uint256 newTotalFunded = idoConfig.totalFunded[token] + amount;
+
         if (token == idoConfig.fyToken) {
             position.fyAmount += amount;
         }
@@ -236,6 +234,49 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         // take token from transaction sender to register recipient
         TokenTransfer._depositToken(token, msg.sender, amount);
         emit Participation(recipient, token, amount);
+    }
+
+    /**
+     * @dev Checks all conditions for participation in an IDO, including whitelist validation if required. Reverts if any conditions are not met.
+     * @param idoId The ID of the IDO.
+     * @param recipient The address of the participant.
+     * @param token The token used for participation.
+     * @param amount The amount of the token.
+     syntax on
+    */
+
+
+    function _participationCheck(uint32 idoId, address recipient, address token, uint256 amount) internal view {
+        IDOConfig storage idoConfig = idoConfigs[idoId];
+        IDOClock storage idoClock = idoClocks[idoId];
+
+        // Cache storage variables used multiple times to memory
+        address buyToken = idoConfig.buyToken;
+        address fyToken = idoConfig.fyToken;
+
+        // Check if the token is a valid participation token
+        if (token != buyToken && token != fyToken) {
+            revert InvalidParticipateToken(token);
+        }
+
+        // Check whitelisting if enabled for this IDO
+        if (idoClock.hasWhitelist && !idoConfig.whitelist[recipient]) {
+            revert("Recipient not whitelisted");
+        }
+
+        // Perform calculations after cheaper checks have passed
+        uint256 globalTotalFunded = idoConfig.totalFunded[buyToken] + idoConfig.totalFunded[fyToken] + amount;
+
+        // Check fyToken contribution limits
+        if (token == fyToken) {
+            uint256 maxFyTokenFunding = (idoConfig.idoSize * idoConfig.fyTokenMaxBasisPoints) / 10000;
+            require(globalTotalFunded <= maxFyTokenFunding, "fyToken contribution exceeds limit");
+        }
+
+        // Check overall contribution cap unless the cap can be exceeded
+        if (!idoClock.hasExceedCap) {
+            require(globalTotalFunded <= idoConfig.idoSize, "Contribution exceeds IDO cap");
+        }
     }
 
 
@@ -283,13 +324,15 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     /**
      * @notice Delays the claimable time for a specific IDO.
      * @dev This function updates the claimable time for the given IDO to a new time, provided the new time is 
-     * later than the current claimable time and does not exceed two weeks from the initial claimable time.
+     * later than the current claimable time, later than the idoEndTime 
+     * and does not exceed two weeks from the initial claimable time.
      * @param idoId The ID of the IDO to update.
      * @param _newTime The new claimable time to set.
      */
     function delayClaimableTime(uint32 idoId, uint64 _newTime) external onlyOwner {
         IDOClock storage ido = idoClocks[idoId];
         require(_newTime > ido.initialClaimableTime, "New claimable time must be after current claimable time");
+        require(_newTime > ido.idoEndTime, "New claimable time must be after current ido time");
         require(
             _newTime <= ido.initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
         );
@@ -362,6 +405,24 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         require(block.timestamp < idoClocks[idoId].idoStartTime, "Cannot change cap status after IDO start.");
         idoClocks[idoId].hasExceedCap = status;
         emit CapExceedStatusChanged(idoId, status);
+    }
+
+    /**
+     * @notice Sets the maximum allowable contribution with fyTokens as a percentage of the total IDO size, measured in basis points.
+     * @dev Updates the maximum basis points for fyToken contributions for a specified IDO. This setting is locked once the IDO starts.
+     * @param idoId The identifier for the specific IDO.
+     * @param newFyTokenMaxBasisPoints The new maximum basis points (bps) limit for fyToken contributions. One basis point equals 0.01%.
+     * Can only be set to a value between 0 and 10,000 basis points (0% to 100%).
+     */
+    function setFyTokenMaxBasisPoints(uint32 idoId, uint16 newFyTokenMaxBasisPoints) external onlyOwner {
+    IDOClock storage idoClock = idoClocks[idoId];
+    require(newFyTokenMaxBasisPoints <= 10000, "Basis points cannot exceed 10000");
+    require(block.timestamp < idoClock.idoStartTime, "Cannot change settings after IDO start");
+
+    IDOConfig storage idoConfig = idoConfigs[idoId];
+    idoConfig.fyTokenMaxBasisPoints = newFyTokenMaxBasisPoints;
+
+    emit FyTokenMaxBasisPointsChanged(idoId, newFyTokenMaxBasisPoints);
     }
 
 }
