@@ -203,25 +203,23 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     
     /**
      * @notice Participate in a specific IDO.
-     * @dev This function allows a recipient to participate in a given IDO by contributing a specified amount of tokens.
+     * @dev This function allows a user to participate in a given IDO by contributing a specified amount of tokens.
      * Checks have been delegated to the `_participationCheck` function
      * The token used for participation must be either the buyToken or fyToken of the IDO.
      * @param idoId The ID of the IDO to participate in.
-     * @param recipient The address of the recipient participating in the IDO.
      * @param token The address of the token used to participate, must be either the buyToken or fyToken.
      * @param amount The amount of the token to participate with.
     */ 
     function participate(
         uint32 idoId, 
-        address recipient, 
         address token, 
         uint256 amount
     ) external payable notFinalized(idoId) afterStart(idoId) {
         IDOConfig storage idoConfig = idoConfigs[idoId];
 
-        _participationCheck(idoId, recipient, token, amount); // Perform all participation checks
+        _participationCheck(idoId, msg.sender, token, amount); // Perform all participation checks
 
-        Position storage position = idoConfig.accountPositions[recipient];
+        Position storage position = idoConfig.accountPositions[msg.sender];
         uint256 newTotalFunded = idoConfig.totalFunded[token] + amount;
 
         if (token == idoConfig.fyToken) {
@@ -231,22 +229,22 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         position.amount += amount;
         idoConfig.totalFunded[token] = newTotalFunded;
 
-        // take token from transaction sender to register recipient
+        // take token from transaction sender to register msg.sender
         TokenTransfer._depositToken(token, msg.sender, amount);
-        emit Participation(recipient, token, amount);
+        emit Participation(msg.sender, token, amount);
     }
 
     /**
      * @dev Checks all conditions for participation in an IDO, including whitelist validation if required. Reverts if any conditions are not met.
      * @param idoId The ID of the IDO.
-     * @param recipient The address of the participant.
+     * @param participant The address of the participant.
      * @param token The token used for participation.
      * @param amount The amount of the token.
      syntax on
     */
 
 
-    function _participationCheck(uint32 idoId, address recipient, address token, uint256 amount) internal view {
+    function _participationCheck(uint32 idoId, address participant, address token, uint256 amount) internal view {
         IDOConfig storage idoConfig = idoConfigs[idoId];
         IDOClock storage idoClock = idoClocks[idoId];
 
@@ -260,7 +258,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         }
 
         // Check whitelisting if enabled for this IDO
-        if (idoClock.hasWhitelist && !idoConfig.whitelist[recipient]) {
+        if (idoClock.hasWhitelist && !idoConfig.whitelist[participant]) {
             revert("Recipient not whitelisted");
         }
 
