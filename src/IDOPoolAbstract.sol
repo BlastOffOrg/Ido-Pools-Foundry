@@ -217,6 +217,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     ) external payable notFinalized(idoId) afterStart(idoId) {
         IDOConfig storage idoConfig = idoConfigs[idoId];
 
+        // Delegate call to external contract to get the multiplier
+        //uint256 multiplier = delegateToCalculator(msg.sender); // TODO
+        //uint256 effectiveAmount = amount * multiplier; // TODO
+
         _participationCheck(idoId, msg.sender, token, amount); // Perform all participation checks
 
         Position storage position = idoConfig.accountPositions[msg.sender];
@@ -227,6 +231,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         }
 
         position.amount += amount;
+        // position.effectiveAmount += effectiveAmount; TODO New storage variable to track effective contribution
+
         idoConfig.totalFunded[token] = newTotalFunded;
 
         // take token from transaction sender to register msg.sender
