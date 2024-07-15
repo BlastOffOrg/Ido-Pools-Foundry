@@ -14,7 +14,7 @@ interface IIDOPool {
     error IDONotEnded();
     error NotClaimable();
 
-    event Participation(address indexed account, address token, uint256 amount);
+    event Participation(address indexed account, address token, uint256 amount, uint256 tokenAllocation);
 
     event Claim(address indexed account, uint256 idoAmount);
 
