@@ -22,7 +22,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 initialIdoEndTime;
         bool isFinalized;
         bool hasWhitelist; 
-        bool hasExceedCap;
     }
 
     struct IDOConfig {
@@ -94,8 +93,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             idoEndTime: idoEndTime,
             initialIdoEndTime: idoEndTime,
             isFinalized: false,
-            hasWhitelist: false,
-            hasExceedCap: false
+            hasWhitelist: false
         });
 
         //IDOConfig needs to be assigned like this, Nested mapping error.
@@ -145,48 +143,16 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
      * @param idoId The ID of the IDO.
      * @param pos The position of the staker.
      * @return allocated The amount of IDO tokens allocated to the staker.
-     * @return excessive The amount of excess funds to be refunded to the staker.
      */
-    function _getPositionValue(uint32 idoId, Position memory pos) internal view returns (uint256 allocated, uint256 excessive) {
+    function _getPositionValue(uint32 idoId, Position memory pos) internal view returns (uint256 allocated) {
         IDOConfig storage ido = idoConfigs[idoId];
         uint256 posInUSD = (pos.amount * ido.fundedUSDValue) / ido.idoPrice; // position value in USD
 
         uint256 idoExp = 10 ** ido.idoTokenDecimals;
-        // amount of IDO received if exceeded funding goal
-        uint256 exceedAlloc = (ido.idoSize * posInUSD) / ido.fundedUSDValue;
-        // amount of IDO token received if not exceeded goal
         uint256 buyAlloc = (posInUSD * idoExp) / ido.idoPrice;
-
-        if ((ido.idoSize * ido.idoPrice / idoExp) >= ido.fundedUSDValue) {
-            return (buyAlloc, 0);
-        } else {
-            uint256 excessiveInUSD = posInUSD - ((exceedAlloc * idoExp) / ido.idoPrice);
-            uint256 excessiveTokens = (excessiveInUSD * ido.fundedUSDValue) / ido.idoPrice;
-            return (exceedAlloc, excessiveTokens);
-        }
+        return (buyAlloc);
     }
 
-        /**
-     * @notice Refund staker after claim and transfer remaining funds to the treasury for a specific IDO.
-     * @dev This function refunds the staker any excess funds and transfers the remaining funds to the treasury.
-     * @dev might use `IDO memory ido` if it helps save gas.`
-     * @param idoId The ID of the IDO.
-     * @param pos The position of the staker.
-     * @param staker The address of the staker to refund.
-     * @param excessAmount The amount to refund to the staker.
-     */
-    function _refundPosition(uint32 idoId, Position memory pos, address staker, uint256 excessAmount) internal {
-        IDOConfig storage ido = idoConfigs[idoId];
-        if (excessAmount <= pos.fyAmount) {
-            TokenTransfer._transferToken(ido.fyToken, staker, excessAmount);
-            TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount - excessAmount);
-            TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
-        } else {
-            TokenTransfer._transferToken(ido.fyToken, staker, pos.fyAmount);
-            TokenTransfer._transferToken(ido.buyToken, staker, excessAmount - pos.fyAmount);
-            TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - excessAmount);
-        }
-    }
 
     /**
      * @notice Transfer the staker's funds to the treasury for a specific IDO.
@@ -277,10 +243,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             require(globalTotalFunded <= maxFyTokenFunding, "fyToken contribution exceeds limit");
         }
 
-        // Check overall contribution cap unless the cap can be exceeded
-        if (!idoClock.hasExceedCap) {
-            require(globalTotalFunded <= idoConfig.idoSize, "Contribution exceeds IDO cap");
-        }
     }
 
 
@@ -296,16 +258,15 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         Position memory pos = ido.accountPositions[staker];
         if (pos.amount == 0) revert NoStaking();
 
-        (uint256 alloc, uint256 excessive) = _getPositionValue(idoId, pos);
+        (uint256 alloc) = _getPositionValue(idoId, pos);
 
         delete ido.accountPositions[staker];
 
-        if (excessive > 0) _refundPosition(idoId, pos, staker, excessive);
-        else _depositToTreasury(idoId, pos);
+        _depositToTreasury(idoId, pos);
 
         TokenTransfer._transferToken(ido.idoToken, staker, alloc);
 
-        emit Claim(staker, alloc, excessive);
+        emit Claim(staker, alloc);
     }
 
     /**
@@ -396,19 +357,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         
         idoClocks[idoId].hasWhitelist = status;
         emit WhitelistStatusChanged(idoId, status);
-    }
-
-    /**
-     * @notice Sets the status of whether an IDO can exceed its predefined cap.
-     * @dev Allows toggling the capability to accept contributions beyond the set IDO cap.
-     *      This setting cannot be changed once the IDO has started to ensure fairness.
-     * @param idoId The identifier for the specific IDO.
-     * @param status True to allow contributions to exceed the cap, false to enforce the cap strictly.
-     */
-    function setCapExceedStatus(uint32 idoId, bool status) external onlyOwner {
-        require(block.timestamp < idoClocks[idoId].idoStartTime, "Cannot change cap status after IDO start.");
-        idoClocks[idoId].hasExceedCap = status;
-        emit CapExceedStatusChanged(idoId, status);
     }
 
     /**

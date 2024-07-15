@@ -16,7 +16,7 @@ interface IIDOPool {
 
     event Participation(address indexed account, address token, uint256 amount);
 
-    event Claim(address indexed account, uint256 idoAmount, uint256 refundAmount);
+    event Claim(address indexed account, uint256 idoAmount);
 
     event ClaimableTimeDelayed(uint256 previousTime, uint256 newTime);
     event IdoEndTimeDelayed(uint256 previousTime, uint256 newTime);
