@@ -364,9 +364,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     /**
         * @notice Provides functions for managing MetaIDO and their rounds
-        * @notice Creates a new MetaIDO and returns its unique identifier
-        * @dev Increments the internal counter to assign a new ID and ensures uniqueness
-        * @return metaIdoId The unique identifier for the newly created MetaIDO
+    * @notice Creates a new MetaIDO and returns its unique identifier
+    * @dev Increments the internal counter to assign a new ID and ensures uniqueness
+    * @return metaIdoId The unique identifier for the newly created MetaIDO
         */
     function createMetaIDO() external onlyOwner returns (uint32) {
         uint32 metaIdoId = nextMetaIdoId++;
@@ -376,11 +376,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     /** 
         * @notice Manages (adds or removes) a round in a specified MetaIDO
-        * @dev Adds a round to the MetaIDO if `addRound` is true, otherwise removes it
+    * @dev Adds a round to the MetaIDO if `addRound` is true, otherwise removes it
         * @param metaIdoId The identifier of the MetaIDO to manage
-        * @param roundId The identifier of the round to be managed
-        * @param addRound True to add the round to the MetaIDO, false to remove it
-        */
+    * @param roundId The identifier of the round to be managed
+    * @param addRound True to add the round to the MetaIDO, false to remove it
+    */
     function manageRoundToMetaIDO(uint32 metaIdoId, uint32 roundId, bool addRound) external onlyOwner {
         require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");  // Ensure the MetaIDO exists
         require(idoRoundClocks[roundId].idoStartTime != 0, "IDO round does not exist");  // Check if the round exists
@@ -400,7 +400,50 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         }
     }
 
+    /**
+        * @notice Retrieves the total amount funded by a specific participant across multiple IDO rounds, filtered by token type.
+        * @param roundIds An array of IDO round identifiers.
+        * @param participant The address of the participant.
+        * @param tokenType The type of token to filter the amounts (0 for BuyToken, 1 for FyToken, 2 for Both).
+        * @return totalAmount The total amount funded by the participant across the specified rounds for the chosen token type.
+        */
+    function getParticipantFundingByRounds(uint32[] calldata roundIds, address participant, uint8 tokenType) external view returns (uint256 totalAmount) {
+        for (uint i = 0; i < roundIds.length; i++) {
+            uint32 roundId = roundIds[i];
+            require(idoRoundConfigs[roundId].idoToken != address(0), "IDO round does not exist");
+            Position storage position = idoRoundConfigs[roundId].accountPositions[participant];
+            if (tokenType == 0) {  // BuyToken
+                totalAmount += position.amount - position.fyAmount;
+            } else if (tokenType == 1) {  // FyToken
+                totalAmount += position.fyAmount;
+            } else {  // Both
+                totalAmount += position.amount;
+            }
+        }
+        return totalAmount;
+    }
 
+    /**
+        * @notice Retrieves the total funds raised for specified IDO rounds, filtered by token type.
+        * @param roundIds An array of IDO round identifiers.
+        * @param tokenType The type of token to filter the funding amounts (0 for BuyToken, 1 for FyToken, 2 for Both).
+        * @return totalRaised The total funds raised in the specified IDO rounds for the chosen token type.
+        */
+    function getFundsRaisedByRounds(uint32[] calldata roundIds, uint8 tokenType) external view returns (uint256 totalRaised) {
+        for (uint i = 0; i < roundIds.length; i++) {
+            uint32 roundId = roundIds[i];
+            require(idoRoundConfigs[roundId].idoToken != address(0), "IDO round does not exist");
+            IDORoundConfig storage round = idoRoundConfigs[roundId];
+            if (tokenType == 0) {  // BuyToken
+                totalRaised += round.totalFunded[round.buyToken];
+            } else if (tokenType == 1) {  // FyToken
+                totalRaised += round.totalFunded[round.fyToken];
+            } else {  // Both
+                totalRaised += round.totalFunded[round.buyToken] + round.totalFunded[round.fyToken];
+            }
+        }
+        return totalRaised;
+    }
 }
 
 
