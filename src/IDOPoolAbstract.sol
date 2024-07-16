@@ -45,6 +45,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     uint32 public nextIdoRoundId = 1;
 
+    uint32 public nextMetaIdoId = 1; // Tracker for the next MetaIDO ID
+    mapping(uint32 => uint32[]) public metaIDORounds; // Maps MetaIDO ID to an array of IDO round IDO
+
     modifier notFinalized(uint32 idoRoundId) {
         if (idoRoundClocks[idoRoundId].isFinalized) revert AlreadyFinalized();
         _;
@@ -358,6 +361,45 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         emit FyTokenMaxBasisPointsChanged(idoRoundId, newFyTokenMaxBasisPoints);
     }
+
+    /**
+        * @notice Provides functions for managing MetaIDO and their rounds
+        * @notice Creates a new MetaIDO and returns its unique identifier
+        * @dev Increments the internal counter to assign a new ID and ensures uniqueness
+        * @return metaIdoId The unique identifier for the newly created MetaIDO
+        */
+    function createMetaIDO() external onlyOwner returns (uint32) {
+        uint32 metaIdoId = nextMetaIdoId++;
+        return metaIdoId;
+    }
+
+
+    /** 
+        * @notice Manages (adds or removes) a round in a specified MetaIDO
+        * @dev Adds a round to the MetaIDO if `addRound` is true, otherwise removes it
+        * @param metaIdoId The identifier of the MetaIDO to manage
+        * @param roundId The identifier of the round to be managed
+        * @param addRound True to add the round to the MetaIDO, false to remove it
+        */
+    function manageRoundToMetaIDO(uint32 metaIdoId, uint32 roundId, bool addRound) external onlyOwner {
+        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");  // Ensure the MetaIDO exists
+        require(idoRoundClocks[roundId].idoStartTime != 0, "IDO round does not exist");  // Check if the round exists
+
+        if (addRound) {
+            metaIDORounds[metaIdoId].push(roundId);
+        } else {
+            uint32[] storage rounds = metaIDORounds[metaIdoId];
+            for (uint i = 0; i < rounds.length; i++) {
+                if (rounds[i] == roundId) {
+                    rounds[i] = rounds[rounds.length - 1];  // Move the last element to the deleted spot
+                    rounds.pop();  // Remove the last element
+                    return;
+                }
+            }
+            revert("Round not found in MetaIDO");
+        }
+    }
+
 
 }
 
