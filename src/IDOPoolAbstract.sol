@@ -33,6 +33,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         address fyToken;
         uint256 idoPrice;
         uint256 idoSize;
+        uint256 idoTokensSold;
         uint256 minimumFundingGoal;
         uint256 fundedUSDValue;
         mapping(address => bool) whitelist;
@@ -108,6 +109,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         config.fyToken = fyToken;
         config.idoPrice = idoPrice;
         config.idoSize = idoSize;
+        config.idoTokensSold = 0;
         config.minimumFundingGoal = minimumFundingGoal;
         config.fyTokenMaxBasisPoints = fyTokenMaxBasisPoints;
         config.fundedUSDValue = 0;
@@ -124,8 +126,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     function finalizeRound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) {
         IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
-        idoConfig.idoSize = IERC20(idoConfig.idoToken).balanceOf(address(this));
-        idoConfig.fundedUSDValue = idoConfig.totalFunded[idoConfig.buyToken] + idoConfig.totalFunded[idoConfig.fyToken];
 
         if (block.timestamp < idoClock.idoEndTime) revert IDONotEnded();
         if (idoConfig.fundedUSDValue < idoConfig.minimumFundingGoal) revert FudingGoalNotReached();
@@ -165,28 +165,32 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
         // Delegate call to external contract to get the multiplier
-        //uint256 multiplier = delegateToCalculator(msg.sender); // TODO
-        //uint256 effectiveAmount = amount * multiplier; // TODO
+        //uint256 multiplier = delegateToCalculator(msg.sender); // TODO MULTIPLIER
+        //uint256 effectiveAmount = amount * multiplier; // TODO MULTIPLIER
 
         _participationCheck(idoRoundId, msg.sender, token, amount); // Perform all participation checks
-
+        // TODO multiplier amount position calculator and idoSize to tokens in smart contract calculator. see if enough tokens are even in the smart contract or prevent particpation
         Position storage position = idoConfig.accountPositions[msg.sender];
-        uint256 newTotalFunded = idoConfig.totalFunded[token] + amount;
 
         if (token == idoConfig.fyToken) {
             position.fyAmount += amount;
         }
 
-        position.amount += amount;
-        // position.effectiveAmount += effectiveAmount; TODO New storage variable to track effective contribution
+        position.amount += amount; // this tracks both, token and fytoken position as you can see. 
+
+        // TODO MULTIPLIER New storage variable to track effective contribution
+        //position.effectiveAmount += effectiveAmount; 
 
         // Calculate token allocation here based on current contribution
         uint256 tokenAllocation = (amount * 10**idoConfig.idoTokenDecimals) / idoConfig.idoPrice;
         position.tokenAllocation += tokenAllocation; 
+        idoConfig.idoTokensSold += tokenAllocation;
 
-        idoConfig.totalFunded[token] = newTotalFunded;
+        // Update idoRound contribution tracker
+        idoConfig.totalFunded[token] += amount;
+        idoConfig.fundedUSDValue += amount;
 
-        // take token from transaction sender to register msg.sender
+        // Take token from transaction sender to smart contract 
         TokenTransfer._depositToken(token, msg.sender, amount);
         emit Participation(msg.sender, token, amount, tokenAllocation);
     }
@@ -228,8 +232,24 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             require(globalTotalFunded <= maxFyTokenFunding, "fyToken contribution exceeds limit");
         }
 
+        _checkFundingCap(idoRoundId, amount);
     }
 
+    /**
+        * @dev Checks whether the IDO round's funding cap will be exceeded with the proposed contribution.
+        * @param idoRoundId The identifier of the IDO round to check.
+        * @param amount The amount of tokens being contributed.
+        */
+    function _checkFundingCap(uint32 idoRoundId, uint256 amount) internal view {
+        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+
+        // Calculate the additional USD based on the amount and the token price from the IDO configuration
+        uint256 additionalUSD = amount * idoConfig.idoPrice;
+        uint256 newFundedUSDValue = idoConfig.fundedUSDValue + additionalUSD;
+
+        // Ensure the new funded USD value does not exceed the planned IDO size times the IDO price
+        require(newFundedUSDValue <= idoConfig.idoSize * idoConfig.idoPrice, "Funding cap exceeded");
+    }
 
     /**
         * @notice Claim refund and IDO tokens for a specific IDO.
@@ -255,19 +275,18 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     }
 
     /**
-        * @notice Withdraw remaining IDO tokens if the funding goal is not reached.
-        * @dev This function allows the owner to withdraw unsold IDO tokens if the funding goal is not reached.
-        * @param idoRoundId The ID of the IDO.
+        * @notice Withdraw remaining unsold IDO tokens after the round is finalized.
+        * @dev Allows the owner to withdraw unsold IDO tokens from a finalized round. Ensures that only spare tokens are withdrawn.
+        * @param idoRoundId The ID of the IDO from which tokens are withdrawn.
         */
-    function withdrawSpareIDO(uint32 idoRoundId) external notFinalized(idoRoundId) onlyOwner {
+    function withdrawSpareIDO(uint32 idoRoundId) external finalized(idoRoundId) onlyOwner {
         IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
-        uint8 decimals = ido.idoTokenDecimals;
-        uint256 totalIDOGoal = (ido.idoSize * ido.idoPrice) / (10 ** decimals);
-        if (totalIDOGoal <= ido.fundedUSDValue) revert FudingGoalNotReached();
+        uint256 contractBal = IERC20(ido.idoToken).balanceOf(address(this));
+        require(contractBal >= ido.idoSize, "Contract token balance less than expected IDO size");
 
-        uint256 totalBought = ido.fundedUSDValue / ido.idoPrice * (10 ** decimals);
-        uint256 idoBal = IERC20(ido.idoToken).balanceOf(address(this));
-        uint256 spare = idoBal - totalBought;
+        uint256 spare = ido.idoSize - ido.idoTokensSold;
+        require(spare > 0, "No spare tokens to withdraw");
+
         TokenTransfer._transferToken(ido.idoToken, msg.sender, spare);
     }
 
@@ -425,7 +444,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     /**
         * @notice Retrieves the total funds raised for specified IDO rounds, filtered by token type.
-        * @param roundIds An array of IDO round identifiers.
+        * @param roundIds An array of IDO round identifiers.:
         * @param tokenType The type of token to filter the funding amounts (0 for BuyToken, 1 for FyToken, 2 for Both).
         * @return totalRaised The total funds raised in the specified IDO rounds for the chosen token type.
         */
@@ -434,12 +453,13 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             uint32 roundId = roundIds[i];
             require(idoRoundConfigs[roundId].idoToken != address(0), "IDO round does not exist");
             IDORoundConfig storage round = idoRoundConfigs[roundId];
+
             if (tokenType == 0) {  // BuyToken
                 totalRaised += round.totalFunded[round.buyToken];
             } else if (tokenType == 1) {  // FyToken
                 totalRaised += round.totalFunded[round.fyToken];
             } else {  // Both
-                totalRaised += round.totalFunded[round.buyToken] + round.totalFunded[round.fyToken];
+                totalRaised += round.fundedUSDValue; 
             }
         }
         return totalRaised;
