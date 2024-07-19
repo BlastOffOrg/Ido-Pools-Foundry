@@ -22,6 +22,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 idoEndTime;
         uint64 initialIdoEndTime;
         bool isFinalized;
+        bool isCanceled;
         bool hasWhitelist; 
     }
 
@@ -56,6 +57,16 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     modifier finalized(uint32 idoRoundId) {
         if (!idoRoundClocks[idoRoundId].isFinalized) revert NotFinalized();
+        _;
+    }
+
+    modifier notCanceled(uint32 idoRoundId) {
+        if (idoRoundClocks[idoRoundId].isCanceled) revert AlreadyCanceled();
+        _;
+    }
+
+    modifier canceled(uint32 idoRoundId) {
+        if (!idoRoundClocks[idoRoundId].isCanceled) revert NotCanceled();
         _;
     }
 
@@ -98,6 +109,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             idoEndTime: idoEndTime,
             initialIdoEndTime: idoEndTime,
             isFinalized: false,
+            isCanceled: false,
             hasWhitelist: false
         });
 
@@ -132,8 +144,51 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         idoClock.isFinalized = true;
 
-        emit Finalized(idoConfig.idoSize, idoConfig.fundedUSDValue);
+        emit Finalized(idoRoundId,idoConfig.fundedUSDValue, idoConfig.idoTokensSold, idoConfig.idoSize);
     }
+
+    /**
+        * @notice Cancels an IDO round. This can only be done by the owner, and allows participants to claim refunds.
+        * @dev Sets the `isCanceled` flag and prevents further participation or finalization.
+        * @param idoRoundId The ID of the IDO to cancel.
+        */
+    function cancelIDORound(uint32 idoRoundId) external onlyOwner {
+        IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
+        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+
+        require(!idoClock.isCanceled, "IDO already canceled");
+        idoClock.isCanceled = true;
+        emit IDOCanceled(idoRoundId, idoConfig.fundedUSDValue, idoConfig.idoTokensSold, idoConfig.idoSize); 
+    }
+
+
+    function claimRefund(uint32 idoRoundId) external canceled(idoRoundId){
+        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+        Position storage pos = idoConfig.accountPositions[msg.sender];
+
+        require(pos.amount > 0, "No funds to refund");
+
+        uint256 refundAmountFyToken = pos.fyAmount;
+        uint256 refundAmountBuyToken = pos.amount - refundAmountFyToken;
+
+        idoConfig.idoTokensSold -= pos.tokenAllocation;
+        idoConfig.fundedUSDValue -= pos.amount; 
+
+        if (refundAmountFyToken > 0) {
+            idoConfig.totalFunded[idoConfig.fyToken] -= refundAmountFyToken;
+            TokenTransfer._transferToken(idoConfig.fyToken, msg.sender, refundAmountFyToken);
+        }
+
+        if (refundAmountBuyToken > 0) {
+            idoConfig.totalFunded[idoConfig.buyToken] -= refundAmountBuyToken;
+            TokenTransfer._transferToken(idoConfig.buyToken, msg.sender, refundAmountBuyToken);
+        }
+
+        delete idoConfig.accountPositions[msg.sender]; 
+
+        emit RefundClaimed(idoRoundId, msg.sender, pos.amount, pos.fyAmount);
+    }
+
 
     /**
         * @notice Transfer the staker's funds to the treasury for a specific IDO.
@@ -161,7 +216,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint32 idoRoundId, 
         address token, 
         uint256 amount
-    ) external payable notFinalized(idoRoundId) afterStart(idoRoundId) {
+    ) external payable notFinalized(idoRoundId) notCanceled(idoRoundId) afterStart(idoRoundId) {
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
         // Delegate call to external contract to get the multiplier
