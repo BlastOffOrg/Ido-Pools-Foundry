@@ -30,4 +30,14 @@ interface IIDOPool {
     event IDOCanceled(uint32 indexed idoRoundId, uint256 fundedUSDValue, uint256 tokensSold, uint256 idoSize);
     event RefundClaim(uint32 indexed idoRoundId, address indexed participant, uint256 amount, uint256 fyAmount);
     event IDOEnabled(uint32 indexed IdoRoundId, address tokenAddress, uint256 idoSize, uint256 newTotalAllocation, uint256 contractTokenBalance);
+    event RoundAddedToMetaIDO(uint32 indexed idoRoundId, uint32 indexed metaIdoId);
+    event RoundRemovedFromMetaIDO(uint32 indexed idoRoundId, uint32 indexed metaIdoId);
+
+    event MetaIDOCreated(uint32 indexed metaIdoId, uint64 registrationStartTime, uint64 registrationEndTime);
+    event MetaIDORegEndTimeDelayed(uint32 indexed metaIdoId, uint64 previousEndTime, uint64 newEndTime);
+    event UserRegistered(uint32 indexed metaIdoId, address indexed user);
+    event UsersAdminRegistered(uint32 indexed metaIdoId, address[] users);
+    event UsersAdminRemoved(uint32 indexed metaIdoId, address[] users);
+    event HasNoRegListEnabled(uint32 indexed idoRoundId);
+
 }

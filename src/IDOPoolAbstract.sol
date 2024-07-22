@@ -25,6 +25,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         bool isCanceled;
         bool isEnabled;
         bool hasWhitelist; 
+        bool hasNoRegList;
+        uint32 parentMetaIdoId;
     }
 
     struct IDORoundConfig {
@@ -48,8 +50,16 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     uint32 public nextIdoRoundId = 1;
 
-    uint32 public nextMetaIdoId = 1; // Tracker for the next MetaIDO ID
-    mapping(uint32 => uint32[]) public metaIDORounds; // Maps MetaIDO ID to an array of IDO round IDO
+    struct MetaIDO {
+        uint32[] roundIds; 
+        uint64 registrationStartTime;
+        uint64 initialRegistrationEndTime;
+        uint64 registrationEndTime;
+        mapping(address => bool) isRegistered;
+    }
+
+    mapping(uint32 => MetaIDO) public metaIDOs;
+    uint32 public nextMetaIdoId = 1; 
 
     mapping(address => uint256) public globalTokenAllocPerIDORound;
 
@@ -89,6 +99,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         __Ownable2Step_init();
     }
 
+    // ============================================= 
+    // =============== Owner IDORound ==============
+    // =============================================
+
+
+
     function createIDORound(
         string calldata idoName,
         address idoToken,
@@ -106,6 +122,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         require(claimableTime > idoEndTime, "Claim time must be after end time");
         uint32 idoRoundId = nextIdoRoundId ++; // postfix increment
         idoRoundClocks[idoRoundId] = IDORoundClock({
+            parentMetaIdoId: 0,
             idoStartTime: idoStartTime,
             claimableTime: claimableTime,
             initialClaimableTime: claimableTime,
@@ -114,6 +131,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             isFinalized: false,
             isCanceled: false,
             isEnabled: false,
+            hasNoRegList: false,
             hasWhitelist: false
         });
 
@@ -203,6 +221,73 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         emit IDOEnabled(idoRoundId, idoConfig.idoToken, idoConfig.idoSize, newTotalAllocation, tokenBalance);
 
     }
+
+    /**
+     * @notice Enables the no registration list requirement for a specific IDO round if it's not already enabled.
+     * @dev Sets `hasNoRegList` to true for the specified IDO round, indicating that participants do not need to be registered.
+     *      Can only be set once.
+     * @param idoRoundId The identifier of the IDO round to modify.
+     */
+    function enableHasNoRegList(uint32 idoRoundId) external onlyOwner {
+        IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
+
+        // Disabled: Can be set anytime.
+        //require(block.timestamp < idoClock.idoStartTime, "Cannot enable hasNoRegList after IDO has started.");
+        
+        require(!idoClock.hasNoRegList, "hasNoRegList is already enabled.");
+
+        idoClock.hasNoRegList = true;
+
+        emit HasNoRegListEnabled(idoRoundId);
+    }
+    
+    // =================================================== 
+    // =============== Owner Delay IDORound ==============
+    // ===================================================
+
+
+
+    /**
+        * @notice Delays the claimable time for a specific IDO Round.
+        * @dev This function updates the claimable time for the given IDO Round to a new time, provided the new time is 
+    * later than the current claimable time, later than the idoEndTime 
+    * and does not exceed two weeks from the initial claimable time.
+        * @param idoRoundId The ID of the IDO Round to update.
+        * @param _newTime The new claimable time to set.
+        */
+    function delayClaimableTime(uint32 idoRoundId, uint64 _newTime) external onlyOwner {
+        IDORoundClock storage ido = idoRoundClocks[idoRoundId];
+        require(_newTime > ido.initialClaimableTime, "New claimable time must be after current claimable time");
+        require(_newTime > ido.idoEndTime, "New claimable time must be after current ido time");
+        require(
+            _newTime <= ido.initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
+        );
+        emit ClaimableTimeDelayed(ido.claimableTime, _newTime);
+
+        ido.claimableTime = _newTime;
+    }
+
+    /**
+        * @notice Delays the end time for a specific IDO.
+        * @dev This function updates the end time for the given IDO to a new time, provided the new time is later 
+    * than the current end time and does not exceed two weeks from the initial end time.
+        * @param idoRoundId The ID of the IDO to update.
+        * @param _newTime The new end time to set.
+        */
+    function delayIdoEndTime(uint32 idoRoundId, uint64 _newTime) external onlyOwner {
+        IDORoundClock storage ido = idoRoundClocks[idoRoundId];
+        require(_newTime > ido.initialIdoEndTime, "New IDO end time must be after initial IDO end time");
+        require(_newTime <= ido.initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
+        emit IdoEndTimeDelayed(ido.idoEndTime, _newTime);
+
+
+        ido.idoEndTime = _newTime;
+    }
+
+
+    // =================================================== 
+    // =============== Participant IDORound ==============
+    // ===================================================
 
 
     function claimRefund(uint32 idoRoundId) external canceled(idoRoundId){
@@ -316,6 +401,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             revert InvalidParticipateToken(token);
         }
 
+        // Ensure the participant is registered in the parent MetaIDO. Some rounds could be registerless. See flag.
+        if (!idoClock.hasNoRegList) {
+            uint32 parentMetaIdoId = idoClock.parentMetaIdoId;
+            require(parentMetaIdoId != 0, "No parent MetaIDO associated with this round.");
+            require(metaIDOs[parentMetaIdoId].isRegistered[participant], "Participant is not registered for the parent MetaIDO.");
+        }
         // Check whitelisting if enabled for this IDO
         if (idoClock.hasWhitelist && !idoConfig.whitelist[participant]) {
             revert("Recipient not whitelisted");
@@ -391,43 +482,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     }
 
     /**
-        * @notice Delays the claimable time for a specific IDO Round.
-        * @dev This function updates the claimable time for the given IDO Round to a new time, provided the new time is 
-    * later than the current claimable time, later than the idoEndTime 
-    * and does not exceed two weeks from the initial claimable time.
-        * @param idoRoundId The ID of the IDO Round to update.
-        * @param _newTime The new claimable time to set.
-        */
-    function delayClaimableTime(uint32 idoRoundId, uint64 _newTime) external onlyOwner {
-        IDORoundClock storage ido = idoRoundClocks[idoRoundId];
-        require(_newTime > ido.initialClaimableTime, "New claimable time must be after current claimable time");
-        require(_newTime > ido.idoEndTime, "New claimable time must be after current ido time");
-        require(
-            _newTime <= ido.initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
-        );
-        emit ClaimableTimeDelayed(ido.claimableTime, _newTime);
-
-        ido.claimableTime = _newTime;
-    }
-
-    /**
-        * @notice Delays the end time for a specific IDO.
-        * @dev This function updates the end time for the given IDO to a new time, provided the new time is later 
-    * than the current end time and does not exceed two weeks from the initial end time.
-        * @param idoRoundId The ID of the IDO to update.
-        * @param _newTime The new end time to set.
-        */
-    function delayIdoEndTime(uint32 idoRoundId, uint64 _newTime) external onlyOwner {
-        IDORoundClock storage ido = idoRoundClocks[idoRoundId];
-        require(_newTime > ido.initialIdoEndTime, "New IDO end time must be after initial IDO end time");
-        require(_newTime <= ido.initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
-        emit IdoEndTimeDelayed(ido.idoEndTime, _newTime);
-
-
-        ido.idoEndTime = _newTime;
-    }
-
-    /**
         * @notice Modifies the whitelist status for a list of participants for a specific IDO.
         * @dev Adds or removes addresses from the whitelist mapping in the IDORoundConfig for the specified IDO, based on the flag.
         * @param idoRoundId The ID of the IDO.
@@ -481,43 +535,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         emit FyTokenMaxBasisPointsChanged(idoRoundId, newFyTokenMaxBasisPoints);
     }
 
-    /**
-        * @notice Provides functions for managing MetaIDO and their rounds
-    * @notice Creates a new MetaIDO and returns its unique identifier
-    * @dev Increments the internal counter to assign a new ID and ensures uniqueness
-    * @return metaIdoId The unique identifier for the newly created MetaIDO
-        */
-    function createMetaIDO() external onlyOwner returns (uint32) {
-        uint32 metaIdoId = nextMetaIdoId++;
-        return metaIdoId;
-    }
-
-
-    /** 
-        * @notice Manages (adds or removes) a round in a specified MetaIDO
-    * @dev Adds a round to the MetaIDO if `addRound` is true, otherwise removes it
-        * @param metaIdoId The identifier of the MetaIDO to manage
-    * @param roundId The identifier of the round to be managed
-    * @param addRound True to add the round to the MetaIDO, false to remove it
-    */
-    function manageRoundToMetaIDO(uint32 metaIdoId, uint32 roundId, bool addRound) external onlyOwner {
-        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");  // Ensure the MetaIDO exists
-        require(idoRoundClocks[roundId].idoStartTime != 0, "IDO round does not exist");  // Check if the round exists
-
-        if (addRound) {
-            metaIDORounds[metaIdoId].push(roundId);
-        } else {
-            uint32[] storage rounds = metaIDORounds[metaIdoId];
-            for (uint i = 0; i < rounds.length; i++) {
-                if (rounds[i] == roundId) {
-                    rounds[i] = rounds[rounds.length - 1];  // Move the last element to the deleted spot
-                    rounds.pop();  // Remove the last element
-                    return;
-                }
-            }
-            revert("Round not found in MetaIDO");
-        }
-    }
 
     /**
         * @notice Retrieves the total amount funded by a specific participant across multiple IDO rounds, filtered by token type.
@@ -563,6 +580,178 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             }
         }
         return totalRaised;
+    }
+
+    // ======================================    
+    // =============== REGISTER ==============
+    // ======================================    
+
+    /**
+     * @notice Registers the sender in the specified MetaIDO if registration is open.
+     * @dev Registers `msg.sender` to `metaIdoId` during the allowed registration period.
+     * @param metaIdoId The identifier of the MetaIDO to register for.
+     */
+    function registerForMetaIDO(uint32 metaIdoId) external {
+        MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+        require(metaIDO.registrationEndTime != metaIDO.registrationStartTime, "Registration disabled for users");
+        // In case we want to disable users from registrating themselves. Effectively a whitelist.
+
+        require(block.timestamp >= metaIDO.registrationStartTime, "Registration has not started yet");
+        require(block.timestamp <= metaIDO.registrationEndTime, "Registration has ended");
+
+        require(!metaIDO.isRegistered[msg.sender], "User already registered");
+
+        metaIDO.isRegistered[msg.sender] = true;
+        emit UserRegistered(metaIdoId, msg.sender);
+    }
+
+    /**
+     * @notice Registers multiple users to a MetaIDO regardless of the registration period, only callable by the contract owner.
+     * @dev Allows batch registration of users by an admin for `metaIdoId`.
+     * @param metaIdoId The identifier of the MetaIDO.
+     * @param users An array of user addresses to register.
+     */
+    function adminAddRegForMetaIDO(uint32 metaIdoId, address[] calldata users) external onlyOwner {
+        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");
+        
+        MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+        address[] memory newlyRegistered = new address[](users.length);
+        uint count = 0;
+
+        for (uint i = 0; i < users.length; i++) {
+            address user = users[i];
+
+            if (!metaIDO.isRegistered[user]) {
+                metaIDO.isRegistered[user] = true;
+                newlyRegistered[count++] = user;
+            }
+        }
+
+        if (count != users.length) {
+            assembly {
+                mstore(newlyRegistered, count)
+            }
+        }
+
+        emit UsersAdminRegistered(metaIdoId, newlyRegistered);
+    }
+
+    /**
+     * @notice Removes multiple users from a MetaIDO's registration list, only callable by the contract owner.
+     * @dev Allows batch unregistration of users by an admin for `metaIdoId`.
+     * @param metaIdoId The identifier of the MetaIDO.
+     * @param users An array of user addresses to unregister.
+     */
+    function adminRemoveRegForMetaIDO(uint32 metaIdoId, address[] calldata users) external onlyOwner {
+        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");
+
+        MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+        address[] memory removedUsers = new address[](users.length);
+        uint count = 0;
+
+        for (uint i = 0; i < users.length; i++) {
+            address user = users[i];
+            if (metaIDO.isRegistered[user]) {
+                metaIDO.isRegistered[user] = false;
+                removedUsers[count] = user;
+                count++;
+            }
+        }
+
+        if (count != users.length) {
+            assembly {
+                mstore(removedUsers, count)
+            }
+        }
+
+        emit UsersAdminRemoved(metaIdoId, removedUsers);
+    }
+
+    // ======================================    
+    // =============== METAIDO ==============
+    // ======================================    
+
+    /**
+        * @notice Creates a new MetaIDO and returns its unique identifier
+        * @dev Increments the internal counter to assign a new ID and ensures uniqueness
+        * @param registrationStartTime The start time for registration.
+        * @param registrationEndTime The end time for registration, also set as initialRegistrationEndTime.
+        * @return metaIdoId The unique identifier for the newly created MetaIDO
+        */
+    function createMetaIDO(uint32[] calldata roundIds, uint64 registrationStartTime, uint64 registrationEndTime) external onlyOwner returns (uint32) {
+        require(registrationEndTime >= registrationStartTime, "End time must be equal or after start time");
+
+        uint32 metaIdoId = nextMetaIdoId++;
+        MetaIDO storage newMetaIDO = metaIDOs[metaIdoId];
+        newMetaIDO.registrationStartTime = registrationStartTime;
+        newMetaIDO.registrationEndTime = registrationEndTime;
+        newMetaIDO.initialRegistrationEndTime = registrationEndTime; // Initially set to the same as registrationEndTime
+
+        // Add each round ID to the MetaIDO
+        for (uint i = 0; i < roundIds.length; i++) {
+            manageRoundToMetaIDO(metaIdoId, roundIds[i], true);
+        }
+
+        emit MetaIDOCreated(metaIdoId, registrationStartTime, registrationEndTime); // Emit an event for the creation
+
+        return metaIdoId;
+    }
+
+    /**
+        * @notice Manages (adds or removes) a round in a specified MetaIDO
+    * @dev Adds a round to the MetaIDO if `addRound` is true, otherwise removes it
+        * @param metaIdoId The identifier of the MetaIDO to manage
+    * @param roundId The identifier of the round to be managed
+    * @param addRound True to add the round to the MetaIDO, false to remove it
+    */
+    function manageRoundToMetaIDO(uint32 metaIdoId, uint32 roundId, bool addRound) public onlyOwner {
+        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");  // Ensure the MetaIDO exists
+        require(idoRoundClocks[roundId].idoStartTime != 0, "IDO round does not exist");  // Check if the round exists
+
+        MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+
+        if (addRound) {
+            require(metaIDOs[metaIdoId].registrationStartTime < idoRoundClocks[roundId].idoStartTime, "Registration must start before the IDO round begins.");
+            // Note: Registration can end after the IDO round starts.
+
+            metaIDO.roundIds.push(roundId);
+            idoRoundClocks[roundId].parentMetaIdoId = metaIdoId; 
+            emit RoundAddedToMetaIDO(roundId, metaIdoId); 
+        } else {
+            uint32[] storage rounds = metaIDO.roundIds;
+            bool found = false;
+            for (uint i = 0; i < rounds.length; i++) {
+                if (rounds[i] == roundId) {
+                    found = true;
+                    rounds[i] = rounds[rounds.length - 1];  
+                    rounds.pop();  
+                    break;
+                }
+            }
+            if (found) {
+                idoRoundClocks[roundId].parentMetaIdoId = 0; 
+                emit RoundRemovedFromMetaIDO(roundId, metaIdoId); 
+            } else {
+                revert("Round not found in MetaIDO");
+            }
+        }
+    }
+
+    /**
+        * @notice Delays the registration end time for a specific MetaIDO.
+        * @dev Updates the registration end time for the given MetaIDO to a new time, provided the new time is later
+        * than the current end time and does not exceed two weeks from the initial registration end time.
+        * @param metaIdoId The ID of the MetaIDO to update.
+        * @param newTime The new registration end time to set.
+        */
+    function delayMetaIDORegEndTime(uint32 metaIdoId, uint64 newTime) external onlyOwner {
+        MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+        require(newTime > metaIDO.registrationEndTime, "New registration end time must be after current end time");
+        require(newTime <= metaIDO.initialRegistrationEndTime + 2 weeks, "New registration end time exceeds 2 weeks from initial end time");
+
+        emit MetaIDORegEndTimeDelayed(metaIdoId, metaIDO.registrationEndTime, newTime);
+
+        metaIDO.registrationEndTime = newTime;
     }
 }
 
