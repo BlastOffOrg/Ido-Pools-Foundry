@@ -24,7 +24,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         bool isFinalized;
         bool isCanceled;
         bool isEnabled;
-        bool hasWhitelist; 
         bool hasNoRegList;
         uint32 parentMetaIdoId;
     }
@@ -40,7 +39,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint256 idoTokensSold;
         uint256 minimumFundingGoal;
         uint256 fundedUSDValue;
-        mapping(address => bool) whitelist;
         mapping(address => uint256) totalFunded;
         mapping(address => Position) accountPositions;
     }
@@ -131,8 +129,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             isFinalized: false,
             isCanceled: false,
             isEnabled: false,
-            hasNoRegList: false,
-            hasWhitelist: false
+            hasNoRegList: false
         });
 
         //IDORoundConfig needs to be assigned like this, Nested mapping error.
@@ -240,6 +237,25 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         emit HasNoRegListEnabled(idoRoundId);
     }
+
+    /**
+        * @notice Sets the maximum allowable contribution with fyTokens as a percentage of the total IDO size, measured in basis points.
+        * @dev Updates the maximum basis points for fyToken contributions for a specified IDO. This setting is locked once the IDO starts.
+        * @param idoRoundId The identifier for the specific IDO.
+        * @param newFyTokenMaxBasisPoints The new maximum basis points (bps) limit for fyToken contributions. One basis point equals 0.01%.
+        * Can only be set to a value between 0 and 10,000 basis points (0% to 100%).
+        */
+    function setFyTokenMaxBasisPoints(uint32 idoRoundId, uint16 newFyTokenMaxBasisPoints) external onlyOwner {
+        IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
+        require(newFyTokenMaxBasisPoints <= 10000, "Basis points cannot exceed 10000");
+        require(block.timestamp < idoClock.idoStartTime, "Cannot change settings after IDO start");
+
+        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+        idoConfig.fyTokenMaxBasisPoints = newFyTokenMaxBasisPoints;
+
+        emit FyTokenMaxBasisPointsChanged(idoRoundId, newFyTokenMaxBasisPoints);
+    }
+
     
     // =================================================== 
     // =============== Owner Delay IDORound ==============
@@ -379,7 +395,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     }
 
     /**
-        * @dev Checks all conditions for participation in an IDO, including whitelist validation if required. Reverts if any conditions are not met.
+        * @dev Checks all conditions for participation in an IDO. Reverts if any conditions are not met.
         * @param idoRoundId The ID of the IDO.
         * @param participant The address of the participant.
         * @param token The token used for participation.
@@ -406,10 +422,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             uint32 parentMetaIdoId = idoClock.parentMetaIdoId;
             require(parentMetaIdoId != 0, "No parent MetaIDO associated with this round.");
             require(metaIDOs[parentMetaIdoId].isRegistered[participant], "Participant is not registered for the parent MetaIDO.");
-        }
-        // Check whitelisting if enabled for this IDO
-        if (idoClock.hasWhitelist && !idoConfig.whitelist[participant]) {
-            revert("Recipient not whitelisted");
         }
 
         // Perform calculations after cheaper checks have passed
@@ -481,59 +493,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         TokenTransfer._transferToken(ido.idoToken, msg.sender, spare);
     }
 
-    /**
-        * @notice Modifies the whitelist status for a list of participants for a specific IDO.
-        * @dev Adds or removes addresses from the whitelist mapping in the IDORoundConfig for the specified IDO, based on the flag.
-        * @param idoRoundId The ID of the IDO.
-        * @param participants The array of addresses of the participants to modify.
-        * @param addToWhitelist True to add to the whitelist, false to remove from the whitelist.
-        */
-    function modifyWhitelist(uint32 idoRoundId, address[] calldata participants, bool addToWhitelist) external onlyOwner {
-        require(idoRoundClocks[idoRoundId].hasWhitelist, "Whitelist not enabled for this IDO.");
-        require(participants.length > 0, "Participant list cannot be empty.");
 
-        for (uint i = 0; i < participants.length; i++) {
-            idoRoundConfigs[idoRoundId].whitelist[participants[i]] = addToWhitelist;
-        }
-    }
+    // =================================================== 
+    // =============== View Funds ========================
+    // ===================================================
 
-    /**
-        * @notice Sets the whitelist status for a specific IDO.
-        * @dev Enables or disables the whitelist for an IDO. Whitelisting cannot be enabled once the IDO has started.
-        *      Disabling can occur at any time unless the IDO is finalized or the whitelist is already disabled.
-        *      Can only be called by the owner.
-        * @param idoRoundId The ID of the IDO.
-        * @param status True to enable the whitelist, false to disable it.
-        */
-    function setWhitelistStatus(uint32 idoRoundId, bool status) external onlyOwner {
-        if (status) {
-            require(block.timestamp < idoRoundClocks[idoRoundId].idoStartTime, "Cannot enable whitelist after IDO start.");
-        } else {
-            require(!idoRoundClocks[idoRoundId].isFinalized, "IDO is already finalized.");
-            require(idoRoundClocks[idoRoundId].hasWhitelist, "Whitelist is already disabled.");
-        }
-
-        idoRoundClocks[idoRoundId].hasWhitelist = status;
-        emit WhitelistStatusChanged(idoRoundId, status);
-    }
-
-    /**
-        * @notice Sets the maximum allowable contribution with fyTokens as a percentage of the total IDO size, measured in basis points.
-        * @dev Updates the maximum basis points for fyToken contributions for a specified IDO. This setting is locked once the IDO starts.
-        * @param idoRoundId The identifier for the specific IDO.
-        * @param newFyTokenMaxBasisPoints The new maximum basis points (bps) limit for fyToken contributions. One basis point equals 0.01%.
-        * Can only be set to a value between 0 and 10,000 basis points (0% to 100%).
-        */
-    function setFyTokenMaxBasisPoints(uint32 idoRoundId, uint16 newFyTokenMaxBasisPoints) external onlyOwner {
-        IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
-        require(newFyTokenMaxBasisPoints <= 10000, "Basis points cannot exceed 10000");
-        require(block.timestamp < idoClock.idoStartTime, "Cannot change settings after IDO start");
-
-        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
-        idoConfig.fyTokenMaxBasisPoints = newFyTokenMaxBasisPoints;
-
-        emit FyTokenMaxBasisPointsChanged(idoRoundId, newFyTokenMaxBasisPoints);
-    }
 
 
     /**
