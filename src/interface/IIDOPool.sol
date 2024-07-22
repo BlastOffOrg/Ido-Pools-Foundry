@@ -5,7 +5,7 @@ interface IIDOPool {
     error InvalidParticipateToken(address token);
     error ParticipateWithDifferentToken(address token);
     error AlreadyFinalized();
-    error AlreadyCanceled();
+    error NotEnabled();
     error NotFinalized();
     error NotCanceled();
     error NotStaker(address);
@@ -28,6 +28,6 @@ interface IIDOPool {
     event WhitelistStatusChanged(uint32 indexed idoRoundId, bool status);
     event FyTokenMaxBasisPointsChanged(uint32 indexed idoRoundId, uint16 newFyTokenMaxBasisPoints);
     event IDOCanceled(uint32 indexed idoRoundId, uint256 fundedUSDValue, uint256 tokensSold, uint256 idoSize);
-    event RefundClaimed(uint32 indexed idoRoundId, address indexed participant, uint256 amount, uint256 fyAmount);
-
+    event RefundClaim(uint32 indexed idoRoundId, address indexed participant, uint256 amount, uint256 fyAmount);
+    event IDOEnabled(uint32 indexed IdoRoundId, address tokenAddress, uint256 idoSize, uint256 newTotalAllocation, uint256 contractTokenBalance);
 }

@@ -23,6 +23,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 initialIdoEndTime;
         bool isFinalized;
         bool isCanceled;
+        bool isEnabled;
         bool hasWhitelist; 
     }
 
@@ -50,6 +51,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     uint32 public nextMetaIdoId = 1; // Tracker for the next MetaIDO ID
     mapping(uint32 => uint32[]) public metaIDORounds; // Maps MetaIDO ID to an array of IDO round IDO
 
+    mapping(address => uint256) public globalTokenAllocPerIDORound;
+
     modifier notFinalized(uint32 idoRoundId) {
         if (idoRoundClocks[idoRoundId].isFinalized) revert AlreadyFinalized();
         _;
@@ -60,8 +63,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         _;
     }
 
-    modifier notCanceled(uint32 idoRoundId) {
-        if (idoRoundClocks[idoRoundId].isCanceled) revert AlreadyCanceled();
+    modifier enabled(uint32 idoRoundId) {
+        if (!idoRoundClocks[idoRoundId].isEnabled) revert NotEnabled();
         _;
     }
 
@@ -110,6 +113,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             initialIdoEndTime: idoEndTime,
             isFinalized: false,
             isCanceled: false,
+            isEnabled: false,
             hasWhitelist: false
         });
 
@@ -143,6 +147,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if (idoConfig.fundedUSDValue < idoConfig.minimumFundingGoal) revert FudingGoalNotReached();
 
         idoClock.isFinalized = true;
+        // Reduce global token allocation by the unsold tokens
+        uint256 unsoldTokens = idoConfig.idoSize - idoConfig.idoTokensSold;
+        globalTokenAllocPerIDORound[idoConfig.idoToken] -= unsoldTokens;
 
         emit Finalized(idoRoundId,idoConfig.fundedUSDValue, idoConfig.idoTokensSold, idoConfig.idoSize);
     }
@@ -158,7 +165,43 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         require(!idoClock.isCanceled, "IDO already canceled");
         idoClock.isCanceled = true;
+
+        // Reduce global token allocation if the round was previously enabled
+        if (idoClock.isEnabled) {
+            globalTokenAllocPerIDORound[idoConfig.idoToken] -= idoConfig.idoSize;
+        }
+
         emit IDOCanceled(idoRoundId, idoConfig.fundedUSDValue, idoConfig.idoTokensSold, idoConfig.idoSize); 
+    }
+
+    /**
+        * @notice This function enables an IDO round if it meets all requirements, including sufficient token reserves across all rounds.
+        * @dev Only callable by the owner. Ensures tokens for this and all other enabled rounds do not exceed the token balance.
+        * @param idoRoundId The identifier of the IDO round to enable.
+        */
+    function enableIDORound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) {
+        IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
+        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+
+        require(!idoClock.isEnabled, "IDO round already enabled");
+        require(idoClock.idoStartTime != 0, "IDO round not properly initialized");
+        require(!idoClock.isCanceled, "IDO round is canceled");
+
+        // Calculate new total allocation for this token, including already allocated tokens
+        uint256 newTotalAllocation = globalTokenAllocPerIDORound[idoConfig.idoToken] + idoConfig.idoSize;
+
+        // Checking the token balance in the contract for the IDO token
+        uint256 tokenBalance = IERC20(idoConfig.idoToken).balanceOf(address(this));
+        require(tokenBalance >= newTotalAllocation, "Insufficient tokens in contract for all enabled IDOs");
+
+        // Update global token allocation
+        globalTokenAllocPerIDORound[idoConfig.idoToken] = newTotalAllocation;
+
+        // Enable the round
+        idoClock.isEnabled = true;
+
+        emit IDOEnabled(idoRoundId, idoConfig.idoToken, idoConfig.idoSize, newTotalAllocation, tokenBalance);
+
     }
 
 
@@ -186,7 +229,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
         delete idoConfig.accountPositions[msg.sender]; 
 
-        emit RefundClaimed(idoRoundId, msg.sender, pos.amount, pos.fyAmount);
+        emit RefundClaim(idoRoundId, msg.sender, pos.amount, pos.fyAmount);
     }
 
 
@@ -216,7 +259,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint32 idoRoundId, 
         address token, 
         uint256 amount
-    ) external payable notFinalized(idoRoundId) notCanceled(idoRoundId) afterStart(idoRoundId) {
+    ) external payable notFinalized(idoRoundId) enabled(idoRoundId) afterStart(idoRoundId) {
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
         // Delegate call to external contract to get the multiplier
@@ -319,6 +362,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         if (pos.amount == 0) revert NoStaking();
 
         uint256 alloc = pos.tokenAllocation; 
+
+        globalTokenAllocPerIDORound[ido.idoToken] -= alloc;
 
         delete ido.accountPositions[staker];
 
