@@ -2,11 +2,13 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
+import "forge-std/console2.sol";
+
 import "../src/mock/MockERC20.sol";
-import {USDIDOPool} from "../src/StandardIDOPool.sol"; // Adjust the import path as needed
+import "./helpers/TestUSDIDOPool.sol";
 
 contract IDOPoolTest is Test {
-    USDIDOPool ido;
+    TestUSDIDOPool ido;
     MockERC20 idoToken;
     MockERC20 buyToken;
     MockERC20 fyToken;
@@ -34,9 +36,9 @@ contract IDOPoolTest is Test {
         idoEndTime = idoStartTime + 1 weeks;
         claimableTime = idoEndTime + 1 days;
 
-        // Deploy your TestIDOPool contract
+        // Deploy TestUSDIDOPool contract
         vm.startPrank(deployer);
-        ido = new USDIDOPool();
+        ido = new TestUSDIDOPool();
         ido.init(deployer);
         vm.stopPrank();
 
@@ -44,6 +46,57 @@ contract IDOPoolTest is Test {
         vm.deal(user2, 10 ether);
         vm.deal(user3, 10 ether);
         vm.deal(user4, 10 ether);
+    }
+
+    function _verifyIDORoundConfig(uint32 newIdoRoundId) internal {
+        (
+            address _idoToken,
+            uint8 _idoTokenDecimals,
+            uint16 _fyTokenMaxBasisPoints,
+            address _buyToken,
+            address _fyToken
+        ) = ido.getIDORoundConfigPart1(newIdoRoundId);
+
+        assertEq(_idoToken, address(idoToken), "IDO token address mismatch");
+        assertEq(_buyToken, address(buyToken), "Buy token address mismatch");
+        assertEq(_fyToken, address(fyToken), "FY token address mismatch");
+        assertEq(_fyTokenMaxBasisPoints, fyTokenMaxBasisPoints, "FY token max basis points mismatch");
+        assertEq(_idoTokenDecimals, idoToken.decimals(), "IDO token decimals mismatch");
+
+        (
+            uint256 _idoPrice,
+            uint256 _idoSize,
+            uint256 _idoTokensSold,
+            uint256 _minimumFundingGoal,
+            uint256 _fundedUSDValue
+        ) = ido.getIDORoundConfigPart2(newIdoRoundId);
+
+        assertEq(_idoPrice, idoPrice, "IDO price mismatch");
+        assertEq(_idoSize, idoSize, "IDO size mismatch");
+        assertEq(_idoTokensSold, 0, "IDO tokens sold should be 0");
+        assertEq(_minimumFundingGoal, minimumFundingGoal, "Minimum funding goal mismatch");
+        assertEq(_fundedUSDValue, 0, "Funded USD value should be 0");
+    }
+
+    function _verifyMetaIDOCreation(uint32 initialIdoRoundId, uint32 metaIdoId) internal {
+        // Confirm that round is enabled
+        (, , , , , , , bool isEnabled, , ) = ido.getIDORoundClock(initialIdoRoundId);
+        assertTrue(isEnabled, "Round not enabled correctly");
+
+        // Check MetaIDO variables
+        (
+            uint64 registrationStartTime,
+            uint64 initialRegistrationEndTime,
+            uint64 registrationEndTime
+        ) = ido.getMetaIDOInfo(metaIdoId);
+
+        assertEq(registrationStartTime, uint64(block.timestamp), "Registration start time mismatch");
+        assertEq(registrationEndTime, uint64(block.timestamp + 12 hours), "Registration end time mismatch");
+        assertEq(initialRegistrationEndTime, registrationEndTime, "Initial registration end time mismatch");
+
+        uint32[] memory metaIDORounds = ido.getMetaIDORoundIds(metaIdoId);
+        assertEq(metaIDORounds.length, 1, "MetaIDO should have 1 round");
+        assertEq(metaIDORounds[0], initialIdoRoundId, "MetaIDO round ID mismatch");
     }
 
     function test_CreateNewIDO() public {
@@ -87,68 +140,25 @@ contract IDOPoolTest is Test {
             bool _isCanceled,
             bool _isEnabled,
             bool _hasNoRegList,
-
-        ) = ido.idoRoundClocks(newIdoRoundId);
+            uint32 _parentMetaIdoId
+        ) = ido.getIDORoundClock(newIdoRoundId);
 
         assertEq(_idoStartTime, idoStartTime, "IDO start time mismatch");
         assertEq(_idoEndTime, idoEndTime, "IDO end time mismatch");
         assertEq(_claimableTime, claimableTime, "Claimable time mismatch");
-        assertEq(
-            _initialClaimableTime,
-            claimableTime,
-            "Initial claimable time mismatch"
-        );
-        assertEq(
-            _initialIdoEndTime,
-            idoEndTime,
-            "Initial IDO end time mismatch"
-        );
+        assertEq(_initialClaimableTime, claimableTime, "Initial claimable time mismatch");
+        assertEq(_initialIdoEndTime, idoEndTime, "Initial IDO end time mismatch");
         assertFalse(_isFinalized, "IDO should not be finalized");
         assertFalse(_isCanceled, "IDO should not be cancelled");
-        assertFalse(_hasNoRegList, "IDO should not be have a reg list");
+        assertFalse(_hasNoRegList, "IDO should not have a reg list");
         assertFalse(_isEnabled, "IDO should not be enabled initially");
 
-        (
-            address _idoToken,
-            uint8 _idoTokenDecimals,
-            uint16 _fyTokenMaxBasisPoints,
-            address _buyToken,
-            address _fyToken,
-            uint256 _idoPrice,
-            uint256 _idoSize,
-            uint256 _idoTokensSold,
-            uint256 _minimumFundingGoal,
-            uint256 _fundedUSDValue
-        ) = ido.idoRoundConfigs(newIdoRoundId);
-
-        assertEq(_idoToken, address(idoToken), "IDO token address mismatch");
-        assertEq(_buyToken, address(buyToken), "Buy token address mismatch");
-        assertEq(_fyToken, address(fyToken), "FY token address mismatch");
-        assertEq(
-            _fyTokenMaxBasisPoints,
-            fyTokenMaxBasisPoints,
-            "FY token max basis points mismatch"
-        );
-        assertEq(
-            _idoTokenDecimals,
-            idoToken.decimals(),
-            "IDO token decimals mismatch"
-        );
-
-        assertEq(_idoPrice, idoPrice, "IDO price mismatch");
-        assertEq(_idoSize, idoSize, "IDO size mismatch");
-        assertEq(_idoTokensSold, 0, "IDO tokens sold should be 0");
-
-        assertEq(
-            _minimumFundingGoal,
-            minimumFundingGoal,
-            "Minimum funding goal mismatch"
-        );
-        assertEq(_fundedUSDValue, 0, "Funded USD value should be 0");
+        // Check IDORoundConfig
+         _verifyIDORoundConfig(newIdoRoundId);
 
         uint32 metaIdoId = ido.nextMetaIdoId();
-        uint32[] memory rounds;
-        rounds[0]=initialIdoRoundId;
+        uint32[] memory rounds = new uint32[](1);
+        rounds[0] = initialIdoRoundId;
 
         // Send tokens to IDO contract and enable IDO round
         vm.startPrank(deployer);
@@ -161,22 +171,7 @@ contract IDOPoolTest is Test {
         );
         vm.stopPrank();
 
-        // Confirm that round is enabled
-        (, , , , , , , bool isEnabled, , ) = ido.idoRoundClocks(newIdoRoundId);
-
-        assertTrue(isEnabled, "Round not enabled correctly");
-
-        // Check MetaIDO variables
-        /* (
-            uint32[] memory roundIds,
-            uint64 registrationStartTime,
-            uint64 initialRegistrationEndTime,
-            uint64 registrationEndTime
-
-        ) = 
-            ido.metaIDOs(metaIdoId); */
-
-            console.log(ido.metaIDOs(metaIdoId));
+        _verifyMetaIDOCreation(initialIdoRoundId, metaIdoId);
     }
 
     /*  function test_Participate() public {
@@ -185,40 +180,40 @@ contract IDOPoolTest is Test {
         uint32 initialIdoRoundId = ido.nextIdoRoundId();
 
         ido.createIDORound(
-            "Test IDO", // IDO name
-            address(idoToken),
-            address(buyToken),
-            address(fyToken),
-            idoPrice,
-            idoSize,
-            minimumFundingGoal,
-            fyTokenMaxBasisPoints,
-            uint64(block.timestamp),
-            uint64(block.timestamp + 7 days),
-            uint64(block.timestamp + 8 days)
+        "Test IDO", // IDO name
+        address(idoToken),
+        address(buyToken),
+        address(fyToken),
+        idoPrice,
+        idoSize,
+        minimumFundingGoal,
+        fyTokenMaxBasisPoints,
+        uint64(block.timestamp),
+        uint64(block.timestamp + 7 days),
+        uint64(block.timestamp + 8 days)
         );
 
-        // Mint tokens to IDO
-        idoToken.mint(address(ido), idoSize);
+    // Mint tokens to IDO
+    idoToken.mint(address(ido), idoSize);
 
-        //Enable Round and Whitelist
-        ido.enableIDORound(initialIdoRoundId);
-        //ido.enableHasNoRegList(initialIdoRoundId);
+    //Enable Round and Whitelist
+    ido.enableIDORound(initialIdoRoundId);
+    //ido.enableHasNoRegList(initialIdoRoundId);
 
-        // Mint buy token to user
-        buyToken.mint(user1, 1_000_000 ether);
+    // Mint buy token to user
+    buyToken.mint(user1, 1_000_000 ether);
 
-        vm.stopPrank();
+    vm.stopPrank();
 
-        uint32 newIdoRoundId = initialIdoRoundId;
+    uint32 newIdoRoundId = initialIdoRoundId;
 
-        vm.startPrank(user1);
-        buyToken.approve(address(ido), 1_000_000 ether);
-        ido.participateInRound(
-            newIdoRoundId,
-            address(buyToken),
-            1_000_000 ether
-        );
+    vm.startPrank(user1);
+    buyToken.approve(address(ido), 1_000_000 ether);
+    ido.participateInRound(
+    newIdoRoundId,
+    address(buyToken),
+    1_000_000 ether
+    );
     } */
 }
 
