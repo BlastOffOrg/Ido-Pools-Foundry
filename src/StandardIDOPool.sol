@@ -6,10 +6,12 @@ import "./IDOPoolAbstract.sol";
 
 contract USDIDOPool is Initializable, IDOPoolAbstract {
     function init(
-        address treasury_
+        address treasury_,
+        address _multiplierContract
     ) external initializer {
         __IDOPoolAbstract_init(
-            treasury_
+            treasury_,
+            _multiplierContract
         );
     }
 }

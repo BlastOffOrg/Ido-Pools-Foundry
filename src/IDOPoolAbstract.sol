@@ -3,16 +3,30 @@ pragma solidity ^0.8.20;
 
 import "openzeppelin-contracts-upgradeable/contracts/access/Ownable2StepUpgradeable.sol";
 import "./interface/IIDOPool.sol";
+import "./MultiplierContract.sol";
 import "./lib/TokenTransfer.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     address public treasury;
+    IMultiplierContract public multiplierContract;
 
     struct Position {
         uint256 amount; // Total amount funded
         uint256 fyAmount; // Amount funded in fyToken
         uint256 tokenAllocation;
+    }
+
+
+    struct IDORoundSpec {
+        uint16 minRank; // TODO update the rank uint to 16 in the mutliplier contract
+        uint16 maxRank; // if minRank and maxRank are both zero, they everyone can participate.
+        uint256 maxAlloc; // maximum amount a participant can contribute to the IDO in USD.
+        uint256 minAlloc; // minimum amount a participant has to contribute to the IDO in USD. Should be at least 1.
+        uint16 maxAllocMultiplier; // In basis points. If it is 100 or above then, the value taken at registration is used. It is applied to the rank alloc, which is then mutliplier to the maxAlloc.
+        bool noMultiplier; // if this is set to true, rank alloc multiplier is not applied.
+        bool noRank; // if this is set to true, there is no rank check.
+        bool specsInitialized; 
     }
 
     struct IDORoundClock {
@@ -21,11 +35,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 initialClaimableTime;
         uint64 idoEndTime;
         uint64 initialIdoEndTime;
+        uint32 parentMetaIdoId;
         bool isFinalized;
         bool isCanceled;
         bool isEnabled;
         bool hasNoRegList;
-        uint32 parentMetaIdoId;
     }
 
     struct IDORoundConfig {
@@ -45,6 +59,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     mapping(uint32 => IDORoundClock) public idoRoundClocks;
     mapping(uint32 => IDORoundConfig) public idoRoundConfigs;
+    mapping(uint32 => IDORoundSpec) public idoRoundSpecs;
 
     uint32 public nextIdoRoundId = 1;
 
@@ -54,6 +69,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         uint64 initialRegistrationEndTime;
         uint64 registrationEndTime;
         mapping(address => bool) isRegistered;
+        mapping(address => uint16) userRank;
+        mapping(address => uint16) userMaxAllocMult;
     }
 
     mapping(uint32 => MetaIDO) public metaIDOs;
@@ -92,8 +109,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         _;
     }
 
-    function __IDOPoolAbstract_init(address treasury_) internal onlyInitializing {
+    function __IDOPoolAbstract_init(address treasury_, address _multiplierContract) internal onlyInitializing {
         treasury = treasury_;
+        multiplierContract = IMultiplierContract(_multiplierContract);
         __Ownable2Step_init();
     }
 
@@ -197,10 +215,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     function enableIDORound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) {
         IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+        IDORoundSpec storage idoSpec = idoRoundSpecs[idoRoundId];
 
         require(!idoClock.isEnabled, "IDO round already enabled");
         require(idoClock.idoStartTime != 0, "IDO round not properly initialized");
         require(!idoClock.isCanceled, "IDO round is canceled");
+        require(idoSpec.specsInitialized, "IDO round specs not set");
 
         // Calculate new total allocation for this token, including already allocated tokens
         uint256 newTotalAllocation = globalTokenAllocPerIDORound[idoConfig.idoToken] + idoConfig.idoSize;
@@ -220,17 +240,17 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice Enables the no registration list requirement for a specific IDO round if it's not already enabled.
-     * @dev Sets `hasNoRegList` to true for the specified IDO round, indicating that participants do not need to be registered.
-     *      Can only be set once.
-     * @param idoRoundId The identifier of the IDO round to modify.
-     */
+        * @notice Enables the no registration list requirement for a specific IDO round if it's not already enabled.
+        * @dev Sets `hasNoRegList` to true for the specified IDO round, indicating that participants do not need to be registered.
+        *      Can only be set once.
+        * @param idoRoundId The identifier of the IDO round to modify.
+        */
     function enableHasNoRegList(uint32 idoRoundId) external onlyOwner {
         IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
 
         // Disabled: Can be set anytime.
         //require(block.timestamp < idoClock.idoStartTime, "Cannot enable hasNoRegList after IDO has started.");
-        
+
         require(!idoClock.hasNoRegList, "hasNoRegList is already enabled.");
 
         idoClock.hasNoRegList = true;
@@ -256,7 +276,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         emit FyTokenMaxBasisPointsChanged(idoRoundId, newFyTokenMaxBasisPoints);
     }
 
-    
+
     // =================================================== 
     // =============== Owner Delay IDORound ==============
     // ===================================================
@@ -350,7 +370,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     /**
         * @notice Participate in a specific IDO.
         * @dev This function allows a user to participate in a given IDO by contributing a specified amount of tokens.
-        * @dev Checks have been delegated to the `_participationCheck` function.
+        * @dev Checks have been delegated to the `_basicParticipationCheck` function.
         * @dev The token used for participation must be either the buyToken or fyToken of the IDO.
         * @param idoRoundId The ID of the IDO to participate in.
         * @param token The address of the token used to participate, must be either the buyToken or fyToken.
@@ -363,22 +383,22 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     ) external payable notFinalized(idoRoundId) enabled(idoRoundId) afterStart(idoRoundId) {
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
-        // Delegate call to external contract to get the multiplier
-        //uint256 multiplier = delegateToCalculator(msg.sender); // TODO MULTIPLIER
-        //uint256 effectiveAmount = amount * multiplier; // TODO MULTIPLIER
+        _basicParticipationCheck(idoRoundId, msg.sender, token, amount); // Perform all participation checks
 
-        _participationCheck(idoRoundId, msg.sender, token, amount); // Perform all participation checks
-        // TODO multiplier amount position calculator and idoSize to tokens in smart contract calculator. see if enough tokens are even in the smart contract or prevent particpation
+        // TODO wrap this in a function to clean up. Hitting function limits here.
+        uint32 parentMetaIdoId = idoRoundClocks[idoRoundId].parentMetaIdoId;
+        uint16 participantRank = metaIDOs[parentMetaIdoId].userRank[msg.sender];
+        uint16 participantMultiplier = metaIDOs[parentMetaIdoId].userMaxAllocMult[msg.sender];
+
+        _roundSpecsParticipationCheck(idoRoundId, msg.sender, amount, participantRank, participantMultiplier);     // round specs check
+
         Position storage position = idoConfig.accountPositions[msg.sender];
 
         if (token == idoConfig.fyToken) {
             position.fyAmount += amount;
         }
-
+        
         position.amount += amount; // this tracks both, token and fytoken position as you can see. 
-
-        // TODO MULTIPLIER New storage variable to track effective contribution
-        //position.effectiveAmount += effectiveAmount; 
 
         // Calculate token allocation here based on current contribution
         uint256 tokenAllocation = (amount * 10**idoConfig.idoTokenDecimals) / idoConfig.idoPrice;
@@ -404,7 +424,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     */
 
 
-    function _participationCheck(uint32 idoRoundId, address participant, address token, uint256 amount) internal view {
+    function _basicParticipationCheck(uint32 idoRoundId, address participant, address token, uint256 amount) internal view {
         IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
         IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
 
@@ -550,34 +570,52 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     // =============== REGISTER ==============
     // ======================================    
 
+
     /**
-     * @notice Registers the sender in the specified MetaIDO if registration is open.
-     * @dev Registers `msg.sender` to `metaIdoId` during the allowed registration period.
-     * @param metaIdoId The identifier of the MetaIDO to register for.
-     */
+        * @notice Registers the sender in the specified MetaIDO if registration is open and stores their rank and multiplier.
+        * @dev Registers `msg.sender` to `metaIdoId` during the allowed registration period and records their current rank and multiplier.
+        * @param metaIdoId The identifier of the MetaIDO to register for.
+        */
     function registerForMetaIDO(uint32 metaIdoId) external {
         MetaIDO storage metaIDO = metaIDOs[metaIdoId];
         require(metaIDO.registrationEndTime != metaIDO.registrationStartTime, "Registration disabled for users");
-        // In case we want to disable users from registrating themselves. Effectively a whitelist.
-
         require(block.timestamp >= metaIDO.registrationStartTime, "Registration has not started yet");
         require(block.timestamp <= metaIDO.registrationEndTime, "Registration has ended");
-
         require(!metaIDO.isRegistered[msg.sender], "User already registered");
 
-        metaIDO.isRegistered[msg.sender] = true;
-        emit UserRegistered(metaIdoId, msg.sender);
+
+        // Try-catch block to handle potential errors from external call
+        try multiplierContract.getMultiplier(msg.sender) returns (uint256 multiplier, uint256 rank) {
+            uint16 newRank = uint16(rank);
+            uint16 newMultiplier = uint16(multiplier);
+
+            // If user is already registered, only allow update if new rank is higher
+            if (metaIDO.isRegistered[msg.sender]) {
+                require(newRank > metaIDO.userRank[msg.sender], "New rank must be higher than current rank");
+            }
+
+            // Store user's rank and multiplier
+            metaIDO.userRank[msg.sender] = newRank;
+            metaIDO.userMaxAllocMult[msg.sender] = newMultiplier;
+            metaIDO.isRegistered[msg.sender] = true;
+
+            emit UserRegistered(metaIdoId, msg.sender, newRank, newMultiplier);
+        } catch {
+            // Handle the error (e.g., revert with a message)
+            revert("Failed to retrieve user multiplier and rank");
+        }
     }
 
+
     /**
-     * @notice Registers multiple users to a MetaIDO regardless of the registration period, only callable by the contract owner.
-     * @dev Allows batch registration of users by an admin for `metaIdoId`.
-     * @param metaIdoId The identifier of the MetaIDO.
-     * @param users An array of user addresses to register.
-     */
+        * @notice Registers multiple users to a MetaIDO regardless of the registration period, only callable by the contract owner.
+        * @dev Allows batch registration of users by an admin for `metaIdoId`.
+        * @param metaIdoId The identifier of the MetaIDO.
+        * @param users An array of user addresses to register.
+        */
     function adminAddRegForMetaIDO(uint32 metaIdoId, address[] calldata users) external onlyOwner {
         require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");
-        
+
         MetaIDO storage metaIDO = metaIDOs[metaIdoId];
         address[] memory newlyRegistered = new address[](users.length);
         uint count = 0;
@@ -601,11 +639,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     }
 
     /**
-     * @notice Removes multiple users from a MetaIDO's registration list, only callable by the contract owner.
-     * @dev Allows batch unregistration of users by an admin for `metaIdoId`.
-     * @param metaIdoId The identifier of the MetaIDO.
-     * @param users An array of user addresses to unregister.
-     */
+        * @notice Removes multiple users from a MetaIDO's registration list, only callable by the contract owner.
+        * @dev Allows batch unregistration of users by an admin for `metaIdoId`.
+        * @param metaIdoId The identifier of the MetaIDO.
+        * @param users An array of user addresses to unregister.
+        */
     function adminRemoveRegForMetaIDO(uint32 metaIdoId, address[] calldata users) external onlyOwner {
         require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");
 
@@ -637,10 +675,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
 
     /**
         * @notice Creates a new MetaIDO and returns its unique identifier
-        * @dev Increments the internal counter to assign a new ID and ensures uniqueness
-        * @param registrationStartTime The start time for registration.
-        * @param registrationEndTime The end time for registration, also set as initialRegistrationEndTime.
-        * @return metaIdoId The unique identifier for the newly created MetaIDO
+    * @dev Increments the internal counter to assign a new ID and ensures uniqueness
+    * @param registrationStartTime The start time for registration.
+            * @param registrationEndTime The end time for registration, also set as initialRegistrationEndTime.
+                * @return metaIdoId The unique identifier for the newly created MetaIDO
         */
     function createMetaIDO(uint32[] calldata roundIds, uint64 registrationStartTime, uint64 registrationEndTime) external onlyOwner returns (uint32) {
         require(registrationEndTime >= registrationStartTime, "End time must be equal or after start time");
@@ -704,7 +742,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
     /**
         * @notice Delays the registration end time for a specific MetaIDO.
         * @dev Updates the registration end time for the given MetaIDO to a new time, provided the new time is later
-        * than the current end time and does not exceed two weeks from the initial registration end time.
+    * than the current end time and does not exceed two weeks from the initial registration end time.
         * @param metaIdoId The ID of the MetaIDO to update.
         * @param newTime The new registration end time to set.
         */
@@ -716,6 +754,121 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         emit MetaIDORegEndTimeDelayed(metaIdoId, metaIDO.registrationEndTime, newTime);
 
         metaIDO.registrationEndTime = newTime;
+    }
+
+    // =============================================================== 
+    // =============== IDOSpecs & Multiplier  ========================
+    // ===============================================================
+
+    /**
+        * @notice Sets the specifications for an IDO round.
+        * @dev This function can only be called by the owner and must be set before enabling the IDO round.
+        *      If noRank is true, there is no rank check.
+        *      If noMultiplier is true, rank alloc multiplier is not applied.
+        * @param idoRoundId The ID of the IDO round to set specifications for.
+        * @param minRank The minimum rank required to participate in this round.
+        * @param maxRank The maximum rank allowed to participate in this round (inclusive).
+        * @param maxAlloc The maximum amount a participant can contribute to the IDO in USD.
+        * @param minAlloc The minimum amount a participant has to contribute to the IDO in USD (at least 1).
+        * @param maxAllocMultiplier The multiplier to apply to allocations in this round (in basis points).
+        * @param noMultiplier Whether to disable the rank alloc multiplier.
+        * @param noRank Whether to disable rank checks for this round.
+        */
+        // TODO add a bool, standardMaxAllocMult, if it's set to true, it will set the maxAllocMult to 10_000, which is the 1x standard.
+    function setIDORoundSpecs(
+        uint32 idoRoundId,
+        uint16 minRank,
+        uint16 maxRank,
+        uint256 maxAlloc,
+        uint256 minAlloc,
+        uint16 maxAllocMultiplier,
+        bool noMultiplier,
+        bool noRank
+    ) external onlyOwner {
+        IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
+        require(idoClock.idoStartTime != 0, "IDO round not properly initialized");
+        require(!idoClock.isEnabled, "Cannot set specs for already enabled round");
+        require(maxRank >= minRank, "Max rank must be greater than or equal to min rank");
+        require(maxAlloc >= minAlloc, "Max allocation must be greater than or equal to min allocation");
+        require(minAlloc >= 1, "Minimum allocation must be at least 1");
+
+        idoRoundSpecs[idoRoundId] = IDORoundSpec({
+            minRank: minRank,
+            maxRank: maxRank,
+            maxAlloc: maxAlloc,
+            minAlloc: minAlloc,
+            maxAllocMultiplier: maxAllocMultiplier,
+            noMultiplier: noMultiplier,
+            noRank: noRank,
+            specsInitialized: true
+        });
+
+        emit IDORoundSpecsSet(idoRoundId, minRank, maxRank, maxAlloc, minAlloc, maxAllocMultiplier, noMultiplier, noRank);
+    }
+
+    /**
+        * @notice Checks participation eligibility based on round specifications and calculates the maximum allocated amount.
+        * @dev This function performs checks based on the IDO round specifications, including rank eligibility
+    *      and allocation limits. It calculates the maximum effective allocated amount considering any
+    *      applicable multipliers.
+        * @param idoRoundId The ID of the IDO round being participated in.
+        * @param participant The address of the participant.
+        * @param amount The amount the participant is attempting to contribute.
+        * @param participantRank The rank of the participant, queried externally before calling this function.
+        * @param participantMultiplier The multiplier of the participant, queried externally before calling this function.
+        * @custom:throws "Participant's rank is not eligible for this IDO round" if the participant's rank is outside the allowed range.
+        * @custom:throws "Contribution below minimum allocation" if the total contribution is less than the minimum allowed.
+        * @custom:throws "Contribution exceeds maximum allocation" if the total contribution is more than the maximum allowed.
+        */
+    function _roundSpecsParticipationCheck(
+        uint32 idoRoundId, 
+        address participant, 
+        uint256 amount,
+        uint16 participantRank,
+        uint16 participantMultiplier
+    ) internal view {
+        IDORoundSpec storage idoSpec = idoRoundSpecs[idoRoundId];
+        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+
+        // Check rank eligibility
+        if (!idoSpec.noRank) {
+            require(participantRank >= idoSpec.minRank && participantRank <= idoSpec.maxRank, "Participant's rank is not eligible for this IDO round");
+        }
+
+        // Check and calculate allocation
+        require(amount >= idoSpec.minAlloc, "Contribution below minimum allocation amount");
+
+        uint256 totalContribution = idoConfig.accountPositions[participant].amount + amount;
+
+        uint256 maxAllocatedAmount;
+
+        if (!idoSpec.noMultiplier) {
+            maxAllocatedAmount = (idoSpec.maxAlloc * participantMultiplier * idoSpec.maxAllocMultiplier) / 10000;
+        } else {
+            maxAllocatedAmount = idoSpec.maxAlloc;
+        }
+        
+        require(totalContribution <= maxAllocatedAmount, "Contribution exceeds maximum allocation amount");
+
+    }
+
+    /**
+        * @notice Updates the multiplier contract address
+    * @dev This function allows the owner to change the multiplier contract address without any delay.
+        *      Use with caution as it immediately affects the contract's behavior.
+        * @param _newMultiplierContract The address of the new multiplier contract
+    * @custom:security-warning This function does not have a timelock and immediately changes a critical contract address.
+        *                          Ensure proper access controls and careful review before calling.
+        */
+    // TODO build a timelock into it, if possible
+    function setMultiplierContract(address _newMultiplierContract) external onlyOwner {
+        require(_newMultiplierContract != address(0), "Invalid multiplier contract address");
+        require(_newMultiplierContract != address(multiplierContract), "New address is the same as current");
+
+        address oldContract = address(multiplierContract);
+        multiplierContract = IMultiplierContract(_newMultiplierContract);
+
+        emit MultiplierContractUpdated(oldContract, _newMultiplierContract);
     }
 }
 

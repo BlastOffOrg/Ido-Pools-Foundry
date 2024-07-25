@@ -35,9 +35,10 @@ interface IIDOPool {
 
     event MetaIDOCreated(uint32 indexed metaIdoId, uint64 registrationStartTime, uint64 registrationEndTime);
     event MetaIDORegEndTimeDelayed(uint32 indexed metaIdoId, uint64 previousEndTime, uint64 newEndTime);
-    event UserRegistered(uint32 indexed metaIdoId, address indexed user);
+    event UserRegistered(uint32 indexed metaIdoId, address indexed user, uint16 rank, uint16 multiplier);
     event UsersAdminRegistered(uint32 indexed metaIdoId, address[] users);
     event UsersAdminRemoved(uint32 indexed metaIdoId, address[] users);
     event HasNoRegListEnabled(uint32 indexed idoRoundId);
-
+    event IDORoundSpecsSet( uint32 indexed idoRoundId, uint16 minRank, uint16 maxRank, uint256 maxAlloc, uint256 minAlloc, uint16 maxAllocMultiplier, bool noMultiplier, bool noRank);
+    event MultiplierContractUpdated(address indexed oldContract, address indexed newContract);
 }
