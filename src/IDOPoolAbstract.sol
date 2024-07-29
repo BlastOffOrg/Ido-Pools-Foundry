@@ -460,7 +460,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
             require(globalTotalFunded <= maxFyTokenFunding, "fyToken contribution exceeds limit");
         }
 
-        _checkFundingCap(idoRoundId, amount);
+        // Check funding cap overflow
+        uint256 additionalUSD = amount * idoConfig.idoPrice;
+        uint256 newFundedUSDValue = idoConfig.fundedUSDValue + additionalUSD;
+        require(newFundedUSDValue <= idoConfig.idoSize * idoConfig.idoPrice, "Funding cap exceeded");
+
     }
 
     /**
@@ -476,21 +480,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable {
         participantMultiplier = metaIDOs[parentMetaIdoId].userMaxAllocMult[participant];
     }
 
-    /**
-        * @dev Checks whether the IDO round's funding cap will be exceeded with the proposed contribution.
-        * @param idoRoundId The identifier of the IDO round to check.
-        * @param amount The amount of tokens being contributed.
-        */
-    function _checkFundingCap(uint32 idoRoundId, uint256 amount) internal view {
-        IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
-        // Calculate the additional USD based on the amount and the token price from the IDO configuration
-        uint256 additionalUSD = amount * idoConfig.idoPrice;
-        uint256 newFundedUSDValue = idoConfig.fundedUSDValue + additionalUSD;
-
-        // Ensure the new funded USD value does not exceed the planned IDO size times the IDO price
-        require(newFundedUSDValue <= idoConfig.idoSize * idoConfig.idoPrice, "Funding cap exceeded");
-    }
 
     /**
         * @notice Claim refund and IDO tokens for a specific IDO.
