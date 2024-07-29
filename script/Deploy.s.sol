@@ -15,15 +15,15 @@ contract DeployScript is Script {
         address stakingContractAddress = address(0); // Replace with actual address
         MultiplierContract multiplierContract = new MultiplierContract(stakingContractAddress);
 
-        // Deploy USDIDOPool implementation
-        USDIDOPool implementation = new USDIDOPool();
+        // Deploy StandardIDOPool implementation
+        StandardIDOPool implementation = new StandardIDOPool();
 
         // Deploy ProxyAdmin
         ProxyAdmin proxyAdmin = new ProxyAdmin();
 
         // Prepare initialization data
         bytes memory initData = abi.encodeWithSelector(
-            USDIDOPool.init.selector,
+            StandardIDOPool.init.selector,
             msg.sender,
             address(multiplierContract)
         );
@@ -35,14 +35,14 @@ contract DeployScript is Script {
             initData
         );
 
-        // The address of your deployed and initialized USDIDOPool is the proxy address
-        USDIDOPool usdIdoPool = USDIDOPool(address(proxy));
+        // The address of your deployed and initialized StandardIDOPool is the proxy address
+        StandardIDOPool usdIdoPool = StandardIDOPool(address(proxy));
 
         vm.stopBroadcast();
 
         console.log("MultiplierContract deployed at:", address(multiplierContract));
-        console.log("USDIDOPool implementation deployed at:", address(implementation));
+        console.log("StandardIDOPool implementation deployed at:", address(implementation));
         console.log("ProxyAdmin deployed at:", address(proxyAdmin));
-        console.log("USDIDOPool proxy deployed at:", address(proxy));
+        console.log("StandardIDOPool proxy deployed at:", address(proxy));
     }
 }

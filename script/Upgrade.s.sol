@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/USDIDOPoolV2.sol"; // Your new version
+import "../src/StandardIDOPool.sol"; // Your new version
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
@@ -10,20 +10,20 @@ contract UpgradeScript is Script {
     function run() external {
         vm.startBroadcast();
 
+        // Read addresses from environment variables
         // Address of the existing proxy (from your previous deployment)
-        address proxyAddress = 0xDB8cFf278adCCF9E9b5da745B44E754fC4EE3C76;
-        
+        address proxyAddress = vm.envAddress("PROXY_ADDRESS");
         // Address of the existing ProxyAdmin (from your previous deployment)
-        address proxyAdminAddress = 0xBb2180ebd78ce97360503434eD37fcf4a1Df61c3;
+        address proxyAdminAddress = vm.envAddress("PROXY_ADMIN_ADDRESS");
 
         // Deploy the new implementation
-        USDIDOPoolV2 newImplementation = new USDIDOPoolV2();
+        StandardIDOPool newImplementation = new StandardIDOPool();
 
         // Get the ProxyAdmin instance
         ProxyAdmin proxyAdmin = ProxyAdmin(proxyAdminAddress);
 
         // Upgrade the proxy to the new implementation
-        proxyAdmin.upgrade(TransparentUpgradeableProxy(payable(proxyAddress)), address(newImplementation));
+        proxyAdmin.upgrade(ITransparentUpgradeableProxy(proxyAddress), address(newImplementation));
 
         vm.stopBroadcast();
 

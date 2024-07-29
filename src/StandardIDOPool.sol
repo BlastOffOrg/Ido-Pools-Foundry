@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
-import "./IDOPoolAbstract.sol";
+import "./core/IDOPoolAbstract.sol";
 
-contract USDIDOPool is Initializable, IDOPoolAbstract {
+contract StandardIDOPool is Initializable, IDOPoolAbstract {
     function init(
         address treasury_,
         address _multiplierContract
