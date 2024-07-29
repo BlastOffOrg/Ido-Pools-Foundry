@@ -5,10 +5,10 @@ import "forge-std/Test.sol";
 import "forge-std/console2.sol";
 
 import "../src/mock/MockERC20.sol";
-import "./helpers/TestUSDIDOPool.sol";
+import "./helpers/TestStandardIDOPool.sol";
 
 contract IDOPoolTest is Test {
-    TestUSDIDOPool ido;
+    TestStandardIDOPool ido;
     MockERC20 idoToken;
     MockERC20 buyToken;
     MockERC20 fyToken;
@@ -39,9 +39,9 @@ contract IDOPoolTest is Test {
         idoEndTime = idoStartTime + 1 weeks;
         claimableTime = idoEndTime + 1 days;
 
-        // Deploy TestUSDIDOPool contract
+        // Deploy TestStandardIDOPool contract
         vm.startPrank(deployer);
-        ido = new TestUSDIDOPool();
+        ido = new TestStandardIDOPool();
         ido.init(deployer);
         vm.stopPrank();
 

@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 
 import "../../src/StandardIDOPool.sol";
 
-contract TestUSDIDOPool is USDIDOPool {
+contract TestStandardIDOPool is StandardIDOPool {
 
     // IDORoundClock getter
     function getIDORoundClock(uint32 idoRoundId) public view returns (
@@ -19,7 +19,7 @@ contract TestUSDIDOPool is USDIDOPool {
         bool hasNoRegList,
         uint32 parentMetaIdoId
     ) {
-        IDORoundClock storage clock = idoRoundClocks[idoRoundId];
+        IDOStructs.IDORoundClock storage clock = idoRoundClocks[idoRoundId];
         return (
             clock.idoStartTime,
             clock.claimableTime,
@@ -42,7 +42,7 @@ contract TestUSDIDOPool is USDIDOPool {
         address buyToken,
         address fyToken
     ) {
-        IDORoundConfig storage config = idoRoundConfigs[idoRoundId];
+        IDOStructs.IDORoundConfig storage config = idoRoundConfigs[idoRoundId];
         return (
             config.idoToken,
             config.idoTokenDecimals,
@@ -59,7 +59,7 @@ contract TestUSDIDOPool is USDIDOPool {
         uint256 minimumFundingGoal,
         uint256 fundedUSDValue
     ) {
-        IDORoundConfig storage config = idoRoundConfigs[idoRoundId];
+        IDOStructs.IDORoundConfig storage config = idoRoundConfigs[idoRoundId];
         return (
             config.idoPrice,
             config.idoSize,
@@ -80,7 +80,7 @@ contract TestUSDIDOPool is USDIDOPool {
         uint256 fyAmount,
         uint256 tokenAllocation
     ) {
-        Position storage position = idoRoundConfigs[idoRoundId].accountPositions[account];
+        IDOStructs.Position storage position = idoRoundConfigs[idoRoundId].accountPositions[account];
         return (position.amount, position.fyAmount, position.tokenAllocation);
     }
 
@@ -90,7 +90,7 @@ contract TestUSDIDOPool is USDIDOPool {
         uint64 initialRegistrationEndTime,
         uint64 registrationEndTime
     ) {
-        MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+        IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
         return (
             metaIDO.registrationStartTime,
             metaIDO.initialRegistrationEndTime,
