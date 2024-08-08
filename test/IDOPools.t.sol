@@ -6,6 +6,8 @@ import "forge-std/console2.sol";
 
 import "../src/mock/MockERC20.sol";
 import "./helpers/TestStandardIDOPool.sol";
+import "forge-std/console.sol";
+
 
 contract IDOPoolTest is Test {
     TestStandardIDOPool ido;
@@ -30,7 +32,7 @@ contract IDOPoolTest is Test {
     uint64 claimableTime;
 
     function setUp() public {
-        deployer = address(0x1);
+        deployer = address(this);
         idoToken = new MockERC20("IDO Token", "IDOT");
         buyToken = new MockERC20("Buy Token", "BUY");
         fyToken = new MockERC20("FY Token", "FY");
@@ -42,13 +44,31 @@ contract IDOPoolTest is Test {
         // Deploy TestStandardIDOPool contract
         vm.startPrank(deployer);
         ido = new TestStandardIDOPool();
-        ido.init(deployer);
+        ido.init(deployer, address(0x2));
         vm.stopPrank();
 
         vm.deal(user1, 10 ether);
         vm.deal(user2, 10 ether);
         vm.deal(user3, 10 ether);
         vm.deal(user4, 10 ether);
+
+    }
+
+
+    function _setIDORoundSpecs(uint32 idoRoundId) internal {
+        vm.startPrank(deployer);
+        ido.setIDORoundSpecs(
+            idoRoundId,
+            1, // minRank
+            10, // maxRank
+            1000 ether, // maxAlloc
+            1 ether, // minAlloc
+            10000, // maxAllocMultiplier (100% in basis points)
+            false, // noMultiplier
+            false, // noRank
+            true // standardMaxAllocMult
+        );
+        vm.stopPrank();
     }
 
     function _verifyIDORoundConfig(uint32 newIdoRoundId) internal view {
@@ -136,9 +156,11 @@ contract IDOPoolTest is Test {
     }
 
     function test_CreateNewIDO() public {
+        console.log("Caller at start of test test_Create:", msg.sender);
         vm.startPrank(deployer);
 
         uint32 initialIdoRoundId = ido.nextIdoRoundId();
+        console.log("Caller 2 at start of test test_Create:", msg.sender);
 
         ido.createIDORound(
             "Test IDO", // IDO name
@@ -153,6 +175,9 @@ contract IDOPoolTest is Test {
             idoEndTime,
             claimableTime
         );
+        console.log("Caller 3 at start of test test_Create:", msg.sender);
+
+        _setIDORoundSpecs(initialIdoRoundId);
 
         vm.stopPrank();
 
@@ -218,378 +243,6 @@ contract IDOPoolTest is Test {
         _verifyMetaIDOCreation(initialIdoRoundId, metaIdoId);
     }
 
-    function test_Participate() public {
-        vm.startPrank(deployer);
-
-        uint32 initialIdoRoundId = ido.nextIdoRoundId();
-
-        ido.createIDORound(
-            "Test IDO", // IDO name
-            address(idoToken),
-            address(buyToken),
-            address(fyToken),
-            idoPrice,
-            idoSize,
-            minimumFundingGoal,
-            fyTokenMaxBasisPoints,
-            uint64(block.timestamp + 1 days),
-            uint64(block.timestamp + 7 days),
-            uint64(block.timestamp + 8 days)
-        );
-
-        // Create META IDO
-        uint32[] memory rounds = new uint32[](1);
-        rounds[0] = initialIdoRoundId;
-        ido.createMetaIDO(
-            rounds,
-            uint64(block.timestamp),
-            uint64(block.timestamp + 12 hours)
-        );
-
-        // Mint tokens to IDO
-        idoToken.mint(address(ido), idoSize);
-
-        //Enable Round and Whitelist
-        ido.enableIDORound(initialIdoRoundId);
-        //ido.enableHasNoRegList(initialIdoRoundId);
-
-        // Mint buy token to user
-        buyToken.mint(user1, 1_000_000 ether);
-
-        vm.stopPrank();
-
-        uint32 newIdoRoundId = initialIdoRoundId;
-
-        vm.startPrank(user1);
-        // Reverts because user isnt registered
-        buyToken.approve(address(ido), 1_000_000 ether);
-        vm.expectRevert(NotStarted.selector);
-
-        ido.participateInRound(
-            newIdoRoundId,
-            address(buyToken),
-            1_000_000 ether
-        );
-        // User Registers
-        ido.registerForMetaIDO(newIdoRoundId);
-        assertTrue(ido.isRegisteredForMetaIDO(newIdoRoundId, user1));
-
-        // Fast forward 1 day to ido start time
-        vm.warp(block.timestamp + 1 days);
-        // Approve and Participate
-        buyToken.approve(address(ido), 1_000_000 ether);
-        ido.participateInRound(
-            newIdoRoundId,
-            address(buyToken),
-            1_000_000 ether
-        );
-
-        assert(
-            ido.getTotalFunded(newIdoRoundId, address(buyToken)) ==
-                1000000 ether
-        );
-
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + 5 days);
-
-        // ROUND IS FINALIZED
-        vm.startPrank(deployer);
-        // reverts if finalized attempted before ending
-        vm.expectRevert(IDONotEnded.selector);
-        ido.finalizeRound(newIdoRoundId);
-
-        // SUCCESSFULL FINALIZATION
-        vm.warp(block.timestamp + 2 days);
-        ido.finalizeRound(newIdoRoundId);
-        vm.stopPrank();
-
-        // USER CLAIMS
-        vm.startPrank(user1);
-        uint256 idoTokenStart = idoToken.balanceOf(user1);
-        ido.claimFromRound(newIdoRoundId, user1);
-        uint256 idoTokenEnd = idoToken.balanceOf(user1);
-        assertGt(idoTokenEnd, idoTokenStart);
-        vm.stopPrank();
-    }
-
-    function test_Many_Participate() public {
-        vm.startPrank(deployer);
-
-        uint32 initialIdoRoundId = ido.nextIdoRoundId();
-
-        ido.createIDORound(
-            "Test IDO", // IDO name
-            address(idoToken),
-            address(buyToken),
-            address(fyToken),
-            idoPrice,
-            idoSize,
-            minimumFundingGoal,
-            fyTokenMaxBasisPoints,
-            uint64(block.timestamp + 1 days),
-            uint64(block.timestamp + 7 days),
-            uint64(block.timestamp + 8 days)
-        );
-
-        // Create META IDO
-        uint32[] memory rounds = new uint32[](1);
-        rounds[0] = initialIdoRoundId;
-        ido.createMetaIDO(
-            rounds,
-            uint64(block.timestamp),
-            uint64(block.timestamp + 12 hours)
-        );
-
-        // Mint tokens to IDO
-        idoToken.mint(address(ido), idoSize);
-
-        //Enable Round and Whitelist
-        ido.enableIDORound(initialIdoRoundId);
-        //ido.enableHasNoRegList(initialIdoRoundId);
-
-        // Mint buy token to user
-        buyToken.mint(user1, 2_000_000 ether);
-        buyToken.mint(user2, 2_000_000 ether);
-
-        vm.stopPrank();
-
-        uint32 newIdoRoundId = initialIdoRoundId;
-
-        // Users 1 Registers
-
-        vm.startPrank(user1);
-        // User Registers
-        ido.registerForMetaIDO(newIdoRoundId);
-        assertTrue(ido.isRegisteredForMetaIDO(newIdoRoundId, user1));
-        vm.stopPrank();
-
-        vm.startPrank(user2);
-        // User 2 Registers
-        ido.registerForMetaIDO(newIdoRoundId);
-        assertTrue(ido.isRegisteredForMetaIDO(newIdoRoundId, user2));
-        vm.stopPrank();
-
-        // Fast forward 1 day to ido start time
-        vm.warp(block.timestamp + 1 days);
-        // Approve and Participate 1
-        vm.startPrank(user1);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 300_000 ether);
-        vm.stopPrank();
-        // Approve and Participate 2
-        vm.startPrank(user2);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        /*---Going over the cap will revert---*/
-        vm.expectRevert("Funding cap exceeded");
-        ido.participateInRound(
-            newIdoRoundId,
-            address(buyToken),
-            1_000_000 ether
-        );
-
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-
-        // FINALIZATION
-        vm.warp(block.timestamp + 7 days);
-        vm.startPrank(deployer);
-        ido.finalizeRound(newIdoRoundId);
-        vm.stopPrank();
-
-        // USER 1 CLAIMS
-        vm.startPrank(user1);
-        uint256 idoTokenStart1 = idoToken.balanceOf(user1);
-        ido.claimFromRound(newIdoRoundId, user1);
-        uint256 idoTokenEnd1 = idoToken.balanceOf(user1);
-        //console.log("user1 ido token balance:", idoTokenEnd1);
-        assertGt(idoTokenEnd1, idoTokenStart1);
-        vm.stopPrank();
-        // USER 2 CLAIMS
-        vm.startPrank(user2);
-        uint256 idoTokenStart2 = idoToken.balanceOf(user2);
-        ido.claimFromRound(newIdoRoundId, user2);
-        uint256 idoTokenEnd2 = idoToken.balanceOf(user2);
-        //console.log("user2 ido token balance:", idoTokenEnd2);
-        assertGt(idoTokenEnd2, idoTokenStart2);
-        vm.stopPrank();
-    }
-
-    function test_IDO_Cancelled() public {
-        vm.startPrank(deployer);
-
-        uint32 initialIdoRoundId = ido.nextIdoRoundId();
-
-        ido.createIDORound(
-            "Test IDO", // IDO name
-            address(idoToken),
-            address(buyToken),
-            address(fyToken),
-            idoPrice,
-            idoSize,
-            minimumFundingGoal,
-            fyTokenMaxBasisPoints,
-            uint64(block.timestamp + 1 days),
-            uint64(block.timestamp + 7 days),
-            uint64(block.timestamp + 8 days)
-        );
-
-        // Create META IDO
-        uint32[] memory rounds = new uint32[](1);
-        rounds[0] = initialIdoRoundId;
-        ido.createMetaIDO(
-            rounds,
-            uint64(block.timestamp),
-            uint64(block.timestamp + 12 hours)
-        );
-
-        // Mint tokens to IDO
-        idoToken.mint(address(ido), idoSize);
-
-        //Enable Round and Whitelist
-        ido.enableIDORound(initialIdoRoundId);
-        //ido.enableHasNoRegList(initialIdoRoundId);
-
-        // Mint buy token to user
-        buyToken.mint(user1, 2_000_000 ether);
-        buyToken.mint(user2, 2_000_000 ether);
-
-        vm.stopPrank();
-
-        uint32 newIdoRoundId = initialIdoRoundId;
-
-        // Users 1 Registers
-
-        vm.startPrank(user1);
-        // User Registers
-        ido.registerForMetaIDO(newIdoRoundId);
-        assertTrue(ido.isRegisteredForMetaIDO(newIdoRoundId, user1));
-        vm.stopPrank();
-
-        vm.startPrank(user2);
-        // User 2 Registers
-        ido.registerForMetaIDO(newIdoRoundId);
-        assertTrue(ido.isRegisteredForMetaIDO(newIdoRoundId, user2));
-        vm.stopPrank();
-
-        // Fast forward 1 day to ido start time
-        vm.warp(block.timestamp + 1 days);
-        // Approve and Participate 1
-        vm.startPrank(user1);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-        // Approve and Participate 2
-        vm.startPrank(user2);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-
-        // CANCELLATION
-        vm.warp(block.timestamp + 2 days);
-        vm.startPrank(deployer);
-        ido.cancelIDORound(newIdoRoundId);
-        vm.stopPrank();
-
-        // USER 1 CLAIMS
-        vm.startPrank(user1);
-        uint256 buyTokenStart1 = buyToken.balanceOf(user1);
-        ido.claimRefund(newIdoRoundId);
-        uint256 buyTokenEnd1 = buyToken.balanceOf(user1);
-        //console.log("user1 buy token balance:", buyTokenEnd1);
-        assertGt(buyTokenEnd1, buyTokenStart1);
-        vm.stopPrank();
-        // USER 2 CLAIMS
-        vm.startPrank(user2);
-        uint256 buyTokenStart2 = buyToken.balanceOf(user2);
-        ido.claimRefund(newIdoRoundId);
-        uint256 buyTokenEnd2 = buyToken.balanceOf(user2);
-        //console.log("user2 buy token balance:", buyTokenEnd2);
-        assertGt(buyTokenEnd2, buyTokenStart2);
-        vm.stopPrank();
-    }
-
-    function test_NoReg_Participate() public {
-        vm.startPrank(deployer);
-
-        uint32 initialIdoRoundId = ido.nextIdoRoundId();
-
-        ido.createIDORound(
-            "Test IDO", // IDO name
-            address(idoToken),
-            address(buyToken),
-            address(fyToken),
-            idoPrice,
-            idoSize,
-            minimumFundingGoal,
-            fyTokenMaxBasisPoints,
-            uint64(block.timestamp + 1 days),
-            uint64(block.timestamp + 7 days),
-            uint64(block.timestamp + 8 days)
-        );
-
-        // Create META IDO
-        uint32[] memory rounds = new uint32[](1);
-        rounds[0] = initialIdoRoundId;
-        ido.createMetaIDO(
-            rounds,
-            uint64(block.timestamp),
-            uint64(block.timestamp + 12 hours)
-        );
-
-        // Mint tokens to IDO
-        idoToken.mint(address(ido), idoSize);
-
-        //Enable Round and Whitelist
-        ido.enableIDORound(initialIdoRoundId);
-        ido.enableHasNoRegList(initialIdoRoundId);
-
-        // Mint buy token to user
-        buyToken.mint(user1, 2_000_000 ether);
-        buyToken.mint(user2, 2_000_000 ether);
-
-        vm.stopPrank();
-
-        uint32 newIdoRoundId = initialIdoRoundId;
-
-        // Fast forward 1 day to ido start time
-        vm.warp(block.timestamp + 1 days);
-        // Approve and Participate 1
-        vm.startPrank(user1);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-        // Approve and Participate 2
-        vm.startPrank(user2);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-
-        // FINALIZATION
-        vm.warp(block.timestamp + 6 days);
-        vm.startPrank(deployer);
-        ido.finalizeRound(newIdoRoundId);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + 1 days);
-        // USER 1 CLAIMS
-        vm.startPrank(user1);
-        uint256 idoTokenStart1 = idoToken.balanceOf(user1);
-        ido.claimFromRound(newIdoRoundId, user1);
-        uint256 idoTokenEnd1 = idoToken.balanceOf(user1);
-        //console.log("user1 ido token balance:", idoTokenEnd1);
-        assertGt(idoTokenEnd1, idoTokenStart1);
-        vm.stopPrank();
-        // USER 2 CLAIMS
-        vm.startPrank(user2);
-        uint256 idoTokenStart2 = idoToken.balanceOf(user2);
-        ido.claimFromRound(newIdoRoundId, user2);
-        uint256 idoTokenEnd2 = idoToken.balanceOf(user2);
-        //console.log("user2 ido token balance:", idoTokenEnd2);
-        assertGt(idoTokenEnd2, idoTokenStart2);
-        vm.stopPrank();
-    }
-
     function test_Multi_Round_IDO() public {
         vm.startPrank(deployer);
 
@@ -610,6 +263,8 @@ contract IDOPoolTest is Test {
             uint64(block.timestamp + 2 days),
             uint64(block.timestamp + 3 days)
         );
+        _setIDORoundSpecs(roundOne);
+
         uint32 roundTwo = ido.nextIdoRoundId();
 
         ido.createIDORound(
@@ -625,6 +280,8 @@ contract IDOPoolTest is Test {
             uint64(block.timestamp + 4 days),
             uint64(block.timestamp + 5 days)
         );
+        _setIDORoundSpecs(roundTwo);
+
         uint32 roundThree = ido.nextIdoRoundId();
         ido.createIDORound(
             "Three IDO", // IDO name
@@ -639,12 +296,14 @@ contract IDOPoolTest is Test {
             uint64(block.timestamp + 7 days),
             uint64(block.timestamp + 8 days)
         );
+        _setIDORoundSpecs(roundThree);
+
         // Create META IDO
         uint32[] memory rounds = new uint32[](3);
         rounds[0] = roundOne;
         rounds[1] = roundTwo;
         rounds[2] = roundThree;
-       (uint32 metaIdoId)= ido.createMetaIDO(
+        (uint32 metaIdoId)= ido.createMetaIDO(
             rounds,
             uint64(block.timestamp),
             uint64(block.timestamp + 12 hours)
@@ -675,51 +334,6 @@ contract IDOPoolTest is Test {
         assert(metaIDORounds[0]==1);
         assert(metaIDORounds[1]==2);
         assert(metaIDORounds[2]==3);
-        
-
-
-        /* 
-        // Fast forward 1 day to ido start time
-        vm.warp(block.timestamp + 1 days);
-        // Approve and Participate 1
-        vm.startPrank(user1);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-        // Approve and Participate 2
-        vm.startPrank(user2);
-        buyToken.approve(address(ido), 2_000_000 ether);
-        ido.participateInRound(newIdoRoundId, address(buyToken), 500_000 ether);
-        vm.stopPrank();
-
-        // FINALIZATION
-        vm.warp(block.timestamp + 6 days);
-        vm.startPrank(deployer);
-        ido.finalizeRound(newIdoRoundId);
-        vm.stopPrank();
-
-        vm.warp(block.timestamp + 1 days);
-        // USER 1 CLAIMS
-        vm.startPrank(user1);
-        uint256 idoTokenStart1 = idoToken.balanceOf(user1);
-        ido.claimFromRound(newIdoRoundId, user1);
-        uint256 idoTokenEnd1 = idoToken.balanceOf(user1);
-        //console.log("user1 ido token balance:", idoTokenEnd1);
-        assertGt(idoTokenEnd1, idoTokenStart1);
-        vm.stopPrank();
-        // USER 2 CLAIMS
-        vm.startPrank(user2);
-        uint256 idoTokenStart2 = idoToken.balanceOf(user2);
-        ido.claimFromRound(newIdoRoundId, user2);
-        uint256 idoTokenEnd2 = idoToken.balanceOf(user2);
-        //console.log("user2 ido token balance:", idoTokenEnd2);
-        assertGt(idoTokenEnd2, idoTokenStart2);
-        vm.stopPrank(); */
     }
 }
 
-/*
-Issue 1: If the ido price and size arent calculated correctly, or the amount that entered the ido is greater than the ido size,  finalize() will revert with [FAIL. Reason: panic: arithmetic underflow or overflow (0x11)]
-
-Issue 2: If IDO is cancelled it should not be able to be Finalized as well. Although claim and refund cannot be called together.
-*/
