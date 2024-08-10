@@ -6,8 +6,9 @@ import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import "../interface/IIDOPool.sol";
 import "../lib/TokenTransfer.sol";
 import "./IDOStorage.sol";
+import "./IDOPoolView.sol";
 
-abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStorage {
+abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStorage, IDOPoolView {
     using IDOStructs for *;
     // Make the structs available in the global namespace
 
@@ -450,59 +451,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         require(spare > 0, "No spare tokens to withdraw");
 
         TokenTransfer._transferToken(ido.idoToken, msg.sender, spare);
-    }
-
-
-    // =================================================== 
-    // =============== View Funds ========================
-    // ===================================================
-
-
-
-    /**
-        * @notice Retrieves the total amount funded by a specific participant across multiple IDO rounds, filtered by token type.
-        * @param roundIds An array of IDO round identifiers.
-        * @param participant The address of the participant.
-        * @param tokenType The type of token to filter the amounts (0 for BuyToken, 1 for FyToken, 2 for Both).
-        * @return totalAmount The total amount funded by the participant across the specified rounds for the chosen token type.
-        */
-    function getParticipantFundingByRounds(uint32[] calldata roundIds, address participant, uint8 tokenType) external view returns (uint256 totalAmount) {
-        for (uint i = 0; i < roundIds.length; i++) {
-            uint32 roundId = roundIds[i];
-            require(idoRoundConfigs[roundId].idoToken != address(0), "IDO round does not exist");
-            IDOStructs.Position storage position = idoRoundConfigs[roundId].accountPositions[participant];
-            if (tokenType == 0) {  // BuyToken
-                totalAmount += position.amount - position.fyAmount;
-            } else if (tokenType == 1) {  // FyToken
-                totalAmount += position.fyAmount;
-            } else {  // Both
-                totalAmount += position.amount;
-            }
-        }
-        return totalAmount;
-    }
-
-    /**
-        * @notice Retrieves the total funds raised for specified IDO rounds, filtered by token type.
-        * @param roundIds An array of IDO round identifiers.:
-        * @param tokenType The type of token to filter the funding amounts (0 for BuyToken, 1 for FyToken, 2 for Both).
-        * @return totalRaised The total funds raised in the specified IDO rounds for the chosen token type.
-        */
-    function getFundsRaisedByRounds(uint32[] calldata roundIds, uint8 tokenType) external view returns (uint256 totalRaised) {
-        for (uint i = 0; i < roundIds.length; i++) {
-            uint32 roundId = roundIds[i];
-            require(idoRoundConfigs[roundId].idoToken != address(0), "IDO round does not exist");
-            IDOStructs.IDORoundConfig storage round = idoRoundConfigs[roundId];
-
-            if (tokenType == 0) {  // BuyToken
-                totalRaised += round.totalFunded[round.buyToken];
-            } else if (tokenType == 1) {  // FyToken
-                totalRaised += round.totalFunded[round.fyToken];
-            } else {  // Both
-                totalRaised += round.fundedUSDValue; 
-            }
-        }
-        return totalRaised;
     }
 
     // ======================================    

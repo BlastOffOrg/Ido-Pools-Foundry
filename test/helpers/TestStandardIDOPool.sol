@@ -98,14 +98,6 @@ contract TestStandardIDOPool is StandardIDOPool {
         );
     }
 
-    function getMetaIDORoundIds(uint32 metaIdoId) public view returns (uint32[] memory) {
-        return metaIDOs[metaIdoId].roundIds;
-    }
-
-    function isRegisteredForMetaIDO(uint32 metaIdoId, address user) public view returns (bool) {
-        return metaIDOs[metaIdoId].isRegistered[user];
-    }
-
     // Getter for globalTokenAllocPerIDORound
     function getGlobalTokenAllocPerIDORound(address token) public view returns (uint256) {
         return globalTokenAllocPerIDORound[token];

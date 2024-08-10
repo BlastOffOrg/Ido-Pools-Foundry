@@ -146,7 +146,7 @@ contract IDOPoolTest is Test {
             "Initial registration end time mismatch"
         );
 
-        uint32[] memory metaIDORounds = ido.getMetaIDORoundIds(metaIdoId);
+        uint32[] memory metaIDORounds = ido.getIDORoundsByMetaIDO(metaIdoId);
         assertEq(metaIDORounds.length, 1, "MetaIDO should have 1 round");
         assertEq(
             metaIDORounds[0],
@@ -329,7 +329,7 @@ contract IDOPoolTest is Test {
 
         vm.stopPrank();
 
-        (uint32[] memory metaIDORounds) = ido.getMetaIDORoundIds(metaIdoId);
+        (uint32[] memory metaIDORounds) = ido.getIDORoundsByMetaIDO(metaIdoId);
 
         assert(metaIDORounds[0]==1);
         assert(metaIDORounds[1]==2);
