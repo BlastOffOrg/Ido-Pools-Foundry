@@ -304,8 +304,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function _depositToTreasury(uint32 idoRoundId, IDOStructs.Position memory pos) internal {
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
-        TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount);
-        TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
+        if (pos.fyAmount > 0) TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount);
+        if (pos.amount - pos.fyAmount > 0) TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
     }
 
 
