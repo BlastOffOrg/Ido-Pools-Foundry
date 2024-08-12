@@ -31,7 +31,12 @@ library TokenTransfer {
     function _transferToken(address token, address to, uint256 amount) internal {
         if (token == address(0)) {
             if (address(this).balance < amount) revert InvalidTokenAmounts(amount);
-            payable(to).sendValue(amount);
+            
+            // Implement sendValue functionality directly
+            (bool success, ) = payable(to).call{value: amount}("");
+            if (!success) {
+                revert("ETH transfer failed");
+            }
         } else {
             IERC20(token).safeTransfer(to, amount);
         }

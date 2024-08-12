@@ -34,7 +34,6 @@ contract MultiplierContract {
     address public admin;
     uint256 public constant UPDATE_INTERVAL = 24 hours; // The time interval after which updates can be executed.
     uint256 public maxLevel; 
-    uint256 public prevMaxLevel; 
 
     IStakingContract public stakingContract;
     address public proposedStakingContract;
@@ -101,8 +100,6 @@ contract MultiplierContract {
             pending: true
         });
 
-        prevMaxLevel = maxLevel;
-        maxLevel = levels[levels.length - 1];
         emit UpdateProposed(pendingUpdate.unlockTime);
     }
 
@@ -122,7 +119,7 @@ contract MultiplierContract {
         require(pendingUpdate.pending, "No pending update to execute");
         require(block.timestamp >= pendingUpdate.unlockTime, "Update is still locked");
 
-        for (uint256 i = 1; i <= prevMaxLevel; i++) {
+        for (uint256 i = 1; i <= maxLevel; i++) {
             delete levelThresholds[i];
             delete levelMultipliers[i];
         }
@@ -131,6 +128,8 @@ contract MultiplierContract {
             levelThresholds[pendingUpdate.levels[i]] = pendingUpdate.thresholds[i];
             levelMultipliers[pendingUpdate.levels[i]] = pendingUpdate.multipliers[i];
         }
+
+        maxLevel = pendingUpdate.levels[pendingUpdate.levels.length - 1];
 
         delete pendingUpdate;
         emit UpdateExecuted();
