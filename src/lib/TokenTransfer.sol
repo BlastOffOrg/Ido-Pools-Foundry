@@ -31,7 +31,7 @@ library TokenTransfer {
     function _transferToken(address token, address to, uint256 amount) internal {
         if (token == address(0)) {
             if (address(this).balance < amount) revert InvalidTokenAmounts(amount);
-            payable(to).transfer(amount);
+            payable(to).sendValue(amount);
         } else {
             IERC20(token).safeTransfer(to, amount);
         }

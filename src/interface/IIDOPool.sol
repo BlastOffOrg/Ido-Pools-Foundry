@@ -28,7 +28,7 @@ interface IIDOPool {
     event WhitelistStatusChanged(uint32 indexed idoRoundId, bool status);
     event FyTokenMaxBasisPointsChanged(uint32 indexed idoRoundId, uint16 newFyTokenMaxBasisPoints);
     event IDOCanceled(uint32 indexed idoRoundId, uint256 fundedUSDValue, uint256 tokensSold, uint256 idoSize);
-    event RefundClaim(uint32 indexed idoRoundId, address indexed participant, uint256 amount, uint256 fyAmount);
+    event RefundClaim(uint32 indexed idoRoundId, address indexed participant, uint256 amount, uint256 buyAmount, uint256 fyTokens);
     event IDOEnabled(uint32 indexed IdoRoundId, address tokenAddress, uint256 idoSize, uint256 newTotalAllocation, uint256 contractTokenBalance);
     event RoundAddedToMetaIDO(uint32 indexed idoRoundId, uint32 indexed metaIdoId);
     event RoundRemovedFromMetaIDO(uint32 indexed idoRoundId, uint32 indexed metaIdoId);

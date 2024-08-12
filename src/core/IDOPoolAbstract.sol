@@ -275,24 +275,25 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         require(pos.amount > 0, "No funds to refund");
 
         uint256 refundAmountFyToken = pos.fyAmount;
-        uint256 refundAmountBuyToken = pos.amount - refundAmountFyToken;
+        uint256 refundAmountTokens = pos.amount;
+        uint256 refundAmountBuyToken = refundAmountTokens - refundAmountFyToken;
 
         idoConfig.idoTokensSold -= pos.tokenAllocation;
         idoConfig.fundedUSDValue -= pos.amount; 
+        idoConfig.totalFunded[idoConfig.fyToken] -= refundAmountFyToken;
+        idoConfig.totalFunded[idoConfig.buyToken] -= refundAmountBuyToken;
+
+        delete idoConfig.accountPositions[msg.sender]; 
 
         if (refundAmountFyToken > 0) {
-            idoConfig.totalFunded[idoConfig.fyToken] -= refundAmountFyToken;
             TokenTransfer._transferToken(idoConfig.fyToken, msg.sender, refundAmountFyToken);
         }
 
         if (refundAmountBuyToken > 0) {
-            idoConfig.totalFunded[idoConfig.buyToken] -= refundAmountBuyToken;
             TokenTransfer._transferToken(idoConfig.buyToken, msg.sender, refundAmountBuyToken);
         }
 
-        delete idoConfig.accountPositions[msg.sender]; 
-
-        emit RefundClaim(idoRoundId, msg.sender, pos.amount, pos.fyAmount);
+        emit RefundClaim(idoRoundId, msg.sender, refundAmountTokens, refundAmountBuyToken, refundAmountFyToken);
     }
 
 
