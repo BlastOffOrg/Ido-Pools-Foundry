@@ -601,8 +601,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
 
         if (addRound) {
-            require(metaIDOs[metaIdoId].registrationStartTime < idoRoundClocks[roundId].idoStartTime, "Registration must start before the IDO round begins.");
             // Note: Registration can end after the IDO round starts.
+            require(metaIDOs[metaIdoId].registrationStartTime < idoRoundClocks[roundId].idoStartTime, "Registration must start before the IDO round begins.");
+            require(idoRoundClocks[roundId].parentMetaIdoId == 0, "IDO round already has a parent MetaIDO");
+
 
             metaIDO.roundIds.push(roundId);
             idoRoundClocks[roundId].parentMetaIdoId = metaIdoId; 
