@@ -445,13 +445,19 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function withdrawSpareIDO(uint32 idoRoundId) external finalized(idoRoundId) onlyOwner {
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
-        uint256 contractBal = IERC20(ido.idoToken).balanceOf(address(this));
-        require(contractBal >= ido.idoSize, "Contract token balance less than expected IDO size");
+        address idoToken = ido.idoToken;
 
-        uint256 spare = ido.idoSize - ido.idoTokensSold;
-        require(spare > 0, "No spare tokens to withdraw");
+        uint256 contractBal = IERC20(idoToken).balanceOf(address(this));
+        uint256 globalAllocation = globalTokenAllocPerIDORound[idoToken];
 
-        TokenTransfer._transferToken(ido.idoToken, msg.sender, spare);
+        require(contractBal >= globalAllocation, "Contract balance less than global allocation");
+
+        uint256 spareTokens = ido.idoSize - ido.idoTokensSold;
+        require(spareTokens > 0, "No spare tokens to withdraw");
+
+        TokenTransfer._transferToken(idoToken, msg.sender, spareTokens);
+        emit ExcessTokensWithdrawn(idoRoundId, idoToken, spareTokens);
+
     }
 
     // ======================================    

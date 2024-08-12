@@ -42,4 +42,6 @@ interface IIDOPool {
     event IDORoundSpecsSet( uint32 indexed idoRoundId, uint16 minRank, uint16 maxRank, uint256 maxAlloc, uint256 minAlloc, uint16 maxAllocMultiplier, bool noMultiplier, bool noRank);
     event MultiplierContractUpdated(address indexed oldContract, address indexed newContract);
     event MultiplierContractUpdateProposed(address proposedAddress, uint256 unlockTime);
+    event ExcessTokensWithdrawn(uint32 indexed idoRoundId, address indexed idoToken, uint256 spareTokens);
+
 }
