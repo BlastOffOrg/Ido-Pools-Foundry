@@ -305,8 +305,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function _depositToTreasury(uint32 idoRoundId, IDOStructs.Position memory pos) internal {
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
-        if (pos.fyAmount > 0) TokenTransfer._transferToken(ido.fyToken, treasury, pos.fyAmount);
-        if (pos.amount - pos.fyAmount > 0) TokenTransfer._transferToken(ido.buyToken, treasury, pos.amount - pos.fyAmount);
+        uint256 fyAmount = pos.fyAmount;
+        uint256 amount = pos.amount;
+
+        if (fyAmount > 0) TokenTransfer._transferToken(ido.fyToken, treasury, fyAmount);
+        if (amount - fyAmount > 0) TokenTransfer._transferToken(ido.buyToken, treasury, amount - fyAmount);
     }
 
 
@@ -328,6 +331,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         _basicParticipationCheck(idoRoundId, msg.sender, token, amount); // Standard participation checks
 
+        // Calculate token allocation and check for funding cap excess
+        uint256 tokenAllocation = (amount * 10**idoConfig.idoTokenDecimals) / idoConfig.idoPrice;
+        uint256 newTotalTokens = idoConfig.fundedUSDValue + tokenAllocation;
+        require(newTotalTokens <= idoConfig.idoSize, "Funding cap exceeded");
+
         (uint16 participantRank, uint16 participantMultiplier) = _getParticipantData(idoRoundId, msg.sender);
 
         _roundSpecsParticipationCheck(idoRoundId, msg.sender, amount, participantRank, participantMultiplier);     // Round specs check
@@ -340,8 +348,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         position.amount += amount; // this tracks both, token and fytoken position as you can see. 
 
-        // Calculate token allocation here based on current contribution
-        uint256 tokenAllocation = (amount * 10**idoConfig.idoTokenDecimals) / idoConfig.idoPrice;
         position.tokenAllocation += tokenAllocation; 
         idoConfig.idoTokensSold += tokenAllocation;
 
@@ -390,12 +396,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
             uint256 maxFyTokenFunding = (idoConfig.idoSize * idoConfig.fyTokenMaxBasisPoints) / 10000;
             require(globalTotalFunded <= maxFyTokenFunding, "fyToken contribution exceeds limit");
         }
-
-        // Check funding cap overflow
-        uint256 additionalUSD = amount * idoConfig.idoPrice;
-        uint256 newFundedUSDValue = idoConfig.fundedUSDValue + additionalUSD;
-        require(newFundedUSDValue <= idoConfig.idoSize * idoConfig.idoPrice, "Funding cap exceeded");
-
     }
 
     /**
@@ -741,13 +741,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         uint256 totalContribution = idoConfig.accountPositions[participant].amount + amount;
 
-        uint256 maxAllocatedAmount;
+        uint256 maxAllocatedAmount = idoSpec.maxAlloc;
 
         if (!idoSpec.noMultiplier) {
             maxAllocatedAmount = (idoSpec.maxAlloc * participantMultiplier * idoSpec.maxAllocMultiplier) / 10000;
-        } else {
-            maxAllocatedAmount = idoSpec.maxAlloc;
-        }
+        } 
 
         require(totalContribution <= maxAllocatedAmount, "Contribution exceeds maximum allocation amount");
 
