@@ -465,6 +465,33 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     // =============== REGISTER ==============
     // ======================================    
 
+    function _registerUserForMetaIDO(uint32 metaIdoId, address user) internal returns (bool, uint16, uint16) {
+        IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
+
+        // Try-catch block to handle potential errors from external call
+        try multiplierContract.getMultiplier(user) returns (uint256 multiplier, uint256 rank) {
+            uint16 newRank = uint16(rank);
+            uint16 newMultiplier = uint16(multiplier);
+
+            // If user is already registered, only allow update if new rank is higher
+            if (metaIDO.isRegistered[user]) {
+                if (newRank <= metaIDO.userRank[user]) {
+                    revert RegisterRankNotHigher(metaIDO.userRank[user], newRank);
+                }
+            }
+
+            // Store user's rank and multiplier
+            metaIDO.userRank[user] = newRank;
+            metaIDO.userMaxAllocMult[user] = newMultiplier;
+            metaIDO.isRegistered[user] = true;
+
+            return (true, newRank, newMultiplier);
+
+        } catch {
+            return (false, 0, 0); // Failed to retrieve multiplier and rank
+        }
+    }
+
     /**
         * @notice Registers the sender in the specified MetaIDO if registration is open and stores or updates their rank and multiplier.
         * @dev Registers `msg.sender` to `metaIdoId` during the allowed registration period and records their current rank and multiplier.
@@ -476,34 +503,17 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         require(metaIDO.registrationEndTime != metaIDO.registrationStartTime, "Registration disabled for users");
         require(block.timestamp >= metaIDO.registrationStartTime, "Registration has not started yet");
         require(block.timestamp <= metaIDO.registrationEndTime, "Registration has ended");
-        require(!metaIDO.isRegistered[msg.sender], "User already registered");
 
+        (bool success, uint16 newRank, uint16 newMultiplier) = _registerUserForMetaIDO(metaIdoId, msg.sender);
 
-        // Try-catch block to handle potential errors from external call
-        try multiplierContract.getMultiplier(msg.sender) returns (uint256 multiplier, uint256 rank) {
-            uint16 newRank = uint16(rank);
-            uint16 newMultiplier = uint16(multiplier);
+        if (!success) revert FailedToRegisterUser();
 
-            // If user is already registered, only allow update if new rank is higher
-            if (metaIDO.isRegistered[msg.sender]) {
-                require(newRank > metaIDO.userRank[msg.sender], "New rank must be higher than current rank");
-            }
-
-            // Store user's rank and multiplier
-            metaIDO.userRank[msg.sender] = newRank;
-            metaIDO.userMaxAllocMult[msg.sender] = newMultiplier;
-            metaIDO.isRegistered[msg.sender] = true;
-
-            emit UserRegistered(metaIdoId, msg.sender, newRank, newMultiplier);
-        } catch {
-            // Handle the error (e.g., revert with a message)
-            revert("Failed to retrieve user multiplier and rank");
-        }
+        emit UserRegistered(metaIdoId, msg.sender, newRank, newMultiplier);
     }
 
 
     /**
-        * @notice Registers multiple users to a MetaIDO regardless of the registration period, only callable by the contract owner.
+        * @notice Registers multiple users to a MetaIDO regardless of the registration period, only callable by the contract owner. For gas efficiency, does not update ranks and multiplier if already registered.
         * @dev Allows batch registration of users by an admin for `metaIdoId`.
         * @param metaIdoId The identifier of the MetaIDO.
         * @param users An array of user addresses to register.
@@ -513,24 +523,34 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
         address[] memory newlyRegistered = new address[](users.length);
+        uint16[] memory newRanks = new uint16[](users.length);
+        uint16[] memory newMultipliers = new uint16[](users.length);
+
         uint count = 0;
 
         for (uint i = 0; i < users.length; i++) {
             address user = users[i];
 
             if (!metaIDO.isRegistered[user]) {
-                metaIDO.isRegistered[user] = true;
-                newlyRegistered[count++] = user;
+                (bool success, uint16 newRank, uint16 newMultiplier) = _registerUserForMetaIDO(metaIdoId, user);
+                if (success) {
+                    newlyRegistered[count] = user;
+                    newRanks[count] = newRank;
+                    newMultipliers[count] = newMultiplier;
+                    count++;
+                }
             }
         }
 
         if (count != users.length) {
             assembly {
                 mstore(newlyRegistered, count)
+                mstore(newRanks, count)
+                mstore(newMultipliers, count)
             }
         }
 
-        emit UsersAdminRegistered(metaIdoId, newlyRegistered);
+        emit UsersAdminRegistered(metaIdoId, newlyRegistered, newRanks, newMultipliers);
     }
 
     /**
@@ -550,6 +570,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
             address user = users[i];
             if (metaIDO.isRegistered[user]) {
                 metaIDO.isRegistered[user] = false;
+                delete metaIDO.userRank[user];
+                delete metaIDO.userMaxAllocMult[user];
                 removedUsers[count] = user;
                 count++;
             }

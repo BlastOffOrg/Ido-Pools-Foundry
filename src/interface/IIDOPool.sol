@@ -15,6 +15,8 @@ interface IIDOPool {
     error FudingGoalNotReached();
     error IDONotEnded();
     error NotClaimable();
+    error FailedToRegisterUser(); //Failed to register to MetaIDO
+    error RegisterRankNotHigher(uint16 currentRank, uint16 newRank);
 
     event Participation(address indexed account, address token, uint256 amount, uint256 tokenAllocation);
 
@@ -36,7 +38,7 @@ interface IIDOPool {
     event MetaIDOCreated(uint32 indexed metaIdoId, uint64 registrationStartTime, uint64 registrationEndTime);
     event MetaIDORegEndTimeDelayed(uint32 indexed metaIdoId, uint64 previousEndTime, uint64 newEndTime);
     event UserRegistered(uint32 indexed metaIdoId, address indexed user, uint16 rank, uint16 multiplier);
-    event UsersAdminRegistered(uint32 indexed metaIdoId, address[] users);
+    event UsersAdminRegistered(uint32 indexed metaIdoId, address[] users, uint16[] ranks, uint16[] multipliers);
     event UsersAdminRemoved(uint32 indexed metaIdoId, address[] users);
     event HasNoRegListEnabled(uint32 indexed idoRoundId);
     event IDORoundSpecsSet( uint32 indexed idoRoundId, uint16 minRank, uint16 maxRank, uint256 maxAlloc, uint256 minAlloc, uint16 maxAllocMultiplier, bool noMultiplier, bool noRank);
