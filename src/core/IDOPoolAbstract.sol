@@ -426,14 +426,15 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         if (pos.amount == 0) revert NoStaking();
 
         uint256 alloc = pos.tokenAllocation; 
+        address idoToken = ido.idoToken;
 
-        globalTokenAllocPerIDORound[ido.idoToken] -= alloc;
+        globalTokenAllocPerIDORound[idoToken] -= alloc;
 
         delete ido.accountPositions[staker];
 
         _depositToTreasury(idoRoundId, pos);
 
-        TokenTransfer._transferToken(ido.idoToken, staker, alloc);
+        TokenTransfer._transferToken(idoToken, staker, alloc);
 
         emit Claim(staker, alloc);
     }

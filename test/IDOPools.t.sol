@@ -77,8 +77,8 @@ contract IDOPoolTest is Test {
             uint8 _idoTokenDecimals,
             uint16 _fyTokenMaxBasisPoints,
             address _buyToken,
-            address _fyToken
-        ) = ido.getIDORoundConfigPart1(newIdoRoundId);
+            address _fyToken,,,,,
+        ) = ido.getIDORoundConfig(newIdoRoundId);
 
         assertEq(_idoToken, address(idoToken), "IDO token address mismatch");
         assertEq(_buyToken, address(buyToken), "Buy token address mismatch");
@@ -95,12 +95,13 @@ contract IDOPoolTest is Test {
         );
 
         (
+            ,,,,,
             uint256 _idoPrice,
             uint256 _idoSize,
             uint256 _idoTokensSold,
             uint256 _minimumFundingGoal,
             uint256 _fundedUSDValue
-        ) = ido.getIDORoundConfigPart2(newIdoRoundId);
+        ) = ido.getIDORoundConfig(newIdoRoundId);
 
         assertEq(_idoPrice, idoPrice, "IDO price mismatch");
         assertEq(_idoSize, idoSize, "IDO size mismatch");

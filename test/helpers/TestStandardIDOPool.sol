@@ -35,24 +35,12 @@ contract TestStandardIDOPool is StandardIDOPool {
     }
 
     // IDORoundConfig getters (split to avoid stack too deep)
-    function getIDORoundConfigPart1(uint32 idoRoundId) public view returns (
+    function getIDORoundConfig(uint32 idoRoundId) public view returns (
         address idoToken,
         uint8 idoTokenDecimals,
         uint16 fyTokenMaxBasisPoints,
         address buyToken,
-        address fyToken
-    ) {
-        IDOStructs.IDORoundConfig storage config = idoRoundConfigs[idoRoundId];
-        return (
-            config.idoToken,
-            config.idoTokenDecimals,
-            config.fyTokenMaxBasisPoints,
-            config.buyToken,
-            config.fyToken
-        );
-    }
-
-    function getIDORoundConfigPart2(uint32 idoRoundId) public view returns (
+        address fyToken,
         uint256 idoPrice,
         uint256 idoSize,
         uint256 idoTokensSold,
@@ -61,6 +49,11 @@ contract TestStandardIDOPool is StandardIDOPool {
     ) {
         IDOStructs.IDORoundConfig storage config = idoRoundConfigs[idoRoundId];
         return (
+            config.idoToken,
+            config.idoTokenDecimals,
+            config.fyTokenMaxBasisPoints,
+            config.buyToken,
+            config.fyToken,
             config.idoPrice,
             config.idoSize,
             config.idoTokensSold,
