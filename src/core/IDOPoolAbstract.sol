@@ -33,6 +33,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         _;
     }
 
+    modifier notCanceled(uint32 idoRoundId) {
+        if (!idoRoundClocks[idoRoundId].isCanceled) revert AlreadyCanceled();
+        _;
+    }
+
     modifier afterStart(uint32 idoRoundId) {
         if(block.timestamp < idoRoundClocks[idoRoundId].idoStartTime) revert NotStarted();
         _;
@@ -94,6 +99,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         config.idoPrice = idoPrice;
         config.idoSize = idoSize;
         config.idoTokensSold = 0;
+        config.idoTokensClaimed = 0;
         config.minimumFundingGoal = minimumFundingGoal;
         config.fyTokenMaxBasisPoints = fyTokenMaxBasisPoints;
         config.fundedUSDValue = 0;
@@ -108,19 +114,21 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * It also reduces the global token allocation by the amount of unsold tokens.
         * @param idoRoundId The ID of the IDO to finalize.
         */
-    function finalizeRound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) {
+    function finalizeRound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) notCanceled(idoRoundId) {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+        uint256 idoTokensSold = idoConfig.idoTokensSold;
+        uint256 idoSize = idoConfig.idoSize;
 
         if (block.timestamp < idoClock.idoEndTime) revert IDONotEnded();
         if (idoConfig.fundedUSDValue < idoConfig.minimumFundingGoal) revert FudingGoalNotReached();
 
         idoClock.isFinalized = true;
         // Reduce global token allocation by the unsold tokens
-        uint256 unsoldTokens = idoConfig.idoSize - idoConfig.idoTokensSold;
+        uint256 unsoldTokens = idoSize - idoTokensSold;
         globalTokenAllocPerIDORound[idoConfig.idoToken] -= unsoldTokens;
 
-        emit Finalized(idoRoundId,idoConfig.fundedUSDValue, idoConfig.idoTokensSold, idoConfig.idoSize);
+        emit Finalized(idoRoundId, idoConfig.fundedUSDValue, idoTokensSold, idoSize);
     }
 
     /**
@@ -137,7 +145,14 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         // Reduce global token allocation if the round was previously enabled
         if (idoClock.isEnabled) {
-            globalTokenAllocPerIDORound[idoConfig.idoToken] -= idoConfig.idoSize;
+            if (idoClock.isFinalized) {
+                // For finalized rounds, remove only unclaimed tokens
+                uint256 unclaimedTokens = idoConfig.idoTokensSold - idoConfig.idoTokensClaimed;
+                globalTokenAllocPerIDORound[idoConfig.idoToken] -= unclaimedTokens;
+            } else {
+                // For non-finalized rounds, remove the entire idoSize
+                globalTokenAllocPerIDORound[idoConfig.idoToken] -= idoConfig.idoSize;
+            }
         }
 
         emit IDOCanceled(idoRoundId, idoConfig.fundedUSDValue, idoConfig.idoTokensSold, idoConfig.idoSize); 
@@ -326,7 +341,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         uint32 idoRoundId, 
         address token, 
         uint256 amount
-    ) external payable notFinalized(idoRoundId) enabled(idoRoundId) afterStart(idoRoundId) {
+    ) external payable notFinalized(idoRoundId) enabled(idoRoundId) afterStart(idoRoundId) notCanceled(idoRoundId) {
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
         _basicParticipationCheck(idoRoundId, msg.sender, token, amount); // Standard participation checks
@@ -420,7 +435,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param staker The address of the staker claiming the IDO tokens.
         */
 
-    function claimFromRound(uint32 idoRoundId, address staker) external claimable(idoRoundId) {
+    function claimFromRound(uint32 idoRoundId, address staker) external claimable(idoRoundId) notCanceled(idoRoundId) {
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
         IDOStructs.Position memory pos = ido.accountPositions[staker];
         if (pos.amount == 0) revert NoStaking();
@@ -429,6 +444,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         address idoToken = ido.idoToken;
 
         globalTokenAllocPerIDORound[idoToken] -= alloc;
+        ido.idoTokensClaimed += alloc;
 
         delete ido.accountPositions[staker];
 

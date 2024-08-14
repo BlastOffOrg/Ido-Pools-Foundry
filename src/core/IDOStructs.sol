@@ -41,6 +41,7 @@ library IDOStructs {
         uint256 idoPrice;
         uint256 idoSize;
         uint256 idoTokensSold;
+        uint256 idoTokensClaimed;
         uint256 minimumFundingGoal;
         uint256 fundedUSDValue;
         mapping(address => uint256) totalFunded;

@@ -7,6 +7,7 @@ interface IIDOPool {
     error AlreadyFinalized();
     error NotEnabled();
     error NotFinalized();
+    error AlreadyCanceled();
     error NotCanceled();
     error NotStaker(address);
     error NoStaking();
