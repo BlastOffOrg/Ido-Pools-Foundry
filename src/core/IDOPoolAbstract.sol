@@ -7,8 +7,9 @@ import "../interface/IIDOPool.sol";
 import "../lib/TokenTransfer.sol";
 import "./IDOStorage.sol";
 import "./IDOPoolView.sol";
+import "./BlastYieldAbstract.sol";
 
-abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStorage, IDOPoolView {
+abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStorage, IDOPoolView, BlastYieldAbstract {
     using IDOStructs for *;
     // Make the structs available in the global namespace
 
@@ -53,6 +54,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         treasury = treasury_;
         multiplierContract = IMultiplierContract(_multiplierContract);
         __Ownable2Step_init();
+        __BlastYieldAbstract_init();
+
     }
 
     // ============================================= 

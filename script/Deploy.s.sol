@@ -36,7 +36,7 @@ contract DeployScript is Script {
         );
 
         // The address of your deployed and initialized StandardIDOPool is the proxy address
-        StandardIDOPool(address(proxy));
+        StandardIDOPool(payable(address(proxy)));
 
         vm.stopBroadcast();
 
