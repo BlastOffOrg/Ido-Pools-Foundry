@@ -28,6 +28,10 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
     IBlast private constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
     IERC20Rebasing private constant USDB = IERC20Rebasing(0x4300000000000000000000000000000000000003);
     IERC20Rebasing private constant WETH = IERC20Rebasing(0x4300000000000000000000000000000000000004);
+    
+    // NOTE: the commented lines below are the testnet addresses
+    // IERC20Rebasing private constant USDB = IERC20Rebasing(0x4200000000000000000000000000000000000022);
+    // IERC20Rebasing private constant WETH = IERC20Rebasing(0x4200000000000000000000000000000000000023);
 
     uint256 public accumulatedWETHYield;
     uint256 public accumulatedUSDBYield;
@@ -37,6 +41,7 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
     event GasClaimed(uint256 amount);
     event ETHYieldClaimed(uint256 amount);
 
+    error InsufficientETHYield(uint256 requested, uint256 available);
     error ETHTransferFailed();
     error InvalidToken(address token);
     error InsufficientWETHYield();
@@ -110,10 +115,14 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
     }
 
     function withdrawETHYield(address payable recipient, uint256 amount) public onlyOwner {
-        require(amount <= accumulatedETHYield, "Insufficient eth yield");
+        if (amount > accumulatedETHYield) {
+            revert InsufficientETHYield(amount, accumulatedETHYield);
+        }
         accumulatedETHYield -= amount;
         (bool success, ) = recipient.call{value: amount}("");
-        require(success, "ETH transfer failed");
+        if (!success) {
+            revert ETHTransferFailed();
+        }
     }
 
     receive() external payable {}

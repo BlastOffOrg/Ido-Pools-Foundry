@@ -13,43 +13,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     using IDOStructs for *;
     // Make the structs available in the global namespace
 
-
-    modifier notFinalized(uint32 idoRoundId) {
-        if (idoRoundClocks[idoRoundId].isFinalized) revert AlreadyFinalized();
-        _;
-    }
-
-    modifier finalized(uint32 idoRoundId) {
-        if (!idoRoundClocks[idoRoundId].isFinalized) revert NotFinalized();
-        _;
-    }
-
-    modifier enabled(uint32 idoRoundId) {
-        if (!idoRoundClocks[idoRoundId].isEnabled) revert NotEnabled();
-        _;
-    }
-
-    modifier canceled(uint32 idoRoundId) {
-        if (!idoRoundClocks[idoRoundId].isCanceled) revert NotCanceled();
-        _;
-    }
-
-    modifier notCanceled(uint32 idoRoundId) {
-        if (!idoRoundClocks[idoRoundId].isCanceled) revert AlreadyCanceled();
-        _;
-    }
-
-    modifier afterStart(uint32 idoRoundId) {
-        if(block.timestamp < idoRoundClocks[idoRoundId].idoStartTime) revert NotStarted();
-        _;
-    }
-
-    modifier claimable(uint32 idoRoundId) {
-        if (!idoRoundClocks[idoRoundId].isFinalized) revert NotFinalized();
-        if (block.timestamp < idoRoundClocks[idoRoundId].claimableTime) revert NotClaimable();
-        _;
-    }
-
     function __IDOPoolAbstract_init(address treasury_, address _multiplierContract) internal onlyInitializing {
         treasury = treasury_;
         multiplierContract = IMultiplierContract(_multiplierContract);
@@ -61,7 +24,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     // ============================================= 
     // =============== Owner IDORound ==============
     // =============================================
-
 
 
     function createIDORound(
@@ -77,8 +39,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         uint64 idoEndTime,
         uint64 claimableTime
     ) external onlyOwner {
-        require(idoEndTime > idoStartTime, "End time must be after start time");
-        require(claimableTime > idoEndTime, "Claim time must be after end time");
+        //"End time must be after start time"
+        if (idoEndTime <= idoStartTime) revert Time1MustBeAfterTime2(idoEndTime, idoStartTime);
+        //"Claim time must be after end time"
+        if (claimableTime <= idoEndTime) revert Time1MustBeAfterTime2(claimableTime, idoEndTime);
         uint32 idoRoundId = nextIdoRoundId ++; // postfix increment
         idoRoundClocks[idoRoundId] = IDOStructs.IDORoundClock({
             parentMetaIdoId: 0,
@@ -117,9 +81,13 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * It also reduces the global token allocation by the amount of unsold tokens.
         * @param idoRoundId The ID of the IDO to finalize.
         */
-    function finalizeRound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) notCanceled(idoRoundId) {
+    function finalizeRound(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+
+        if (idoClock.isCanceled) revert AlreadyCanceled();
+        if (idoClock.isFinalized) revert AlreadyFinalized();
+        
         uint256 idoTokensSold = idoConfig.idoTokensSold;
         uint256 idoSize = idoConfig.idoSize;
 
@@ -143,7 +111,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
-        require(!idoClock.isCanceled, "IDO already canceled");
+        if (idoClock.isCanceled) revert AlreadyCanceled();
+
         idoClock.isCanceled = true;
 
         // Reduce global token allocation if the round was previously enabled
@@ -166,22 +135,23 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @dev Only callable by the owner. Ensures tokens for this and all other enabled rounds do not exceed the token balance.
         * @param idoRoundId The identifier of the IDO round to enable.
         */
-    function enableIDORound(uint32 idoRoundId) external onlyOwner notFinalized(idoRoundId) {
+    function enableIDORound(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
         IDOStructs.IDORoundSpec storage idoSpec = idoRoundSpecs[idoRoundId];
 
-        require(!idoClock.isEnabled, "IDO round already enabled");
-        require(idoClock.idoStartTime != 0, "IDO round not properly initialized");
-        require(!idoClock.isCanceled, "IDO round is canceled");
-        require(idoSpec.specsInitialized, "IDO round specs not set");
+        if (idoClock.isEnabled) revert IDORoundIsEnabled();
+        if (idoClock.idoStartTime == 0) revert IDORoundNotInitialized();
+        if (idoClock.isCanceled) revert AlreadyCanceled();
+        if (idoClock.isFinalized) revert AlreadyFinalized();
 
+        if (!idoSpec.specsInitialized) revert IDORoundSpecsNotSet();
         // Calculate new total allocation for this token, including already allocated tokens
         uint256 newTotalAllocation = globalTokenAllocPerIDORound[idoConfig.idoToken] + idoConfig.idoSize;
 
         // Checking the token balance in the contract for the IDO token
         uint256 tokenBalance = IERC20(idoConfig.idoToken).balanceOf(address(this));
-        require(tokenBalance >= newTotalAllocation, "Insufficient tokens in contract for all enabled IDOs");
+        if (tokenBalance < newTotalAllocation) revert InsufficientFundsToEnableIDORound();
 
         // Update global token allocation
         globalTokenAllocPerIDORound[idoConfig.idoToken] = newTotalAllocation;
@@ -196,20 +166,18 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     /**
         * @notice Enables the no registration list requirement for a specific IDO round if it's not already enabled.
         * @dev Sets `hasNoRegList` to true for the specified IDO round, indicating that participants do not need to be registered.
-        *      Can only be set once.
+        *      Can only be set once. Nothing happens if it is set multiple times.
         * @param idoRoundId The identifier of the IDO round to modify.
         */
     function enableHasNoRegList(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
 
-        // Disabled: Can be set anytime.
-        //require(block.timestamp < idoClock.idoStartTime, "Cannot enable hasNoRegList after IDO has started.");
-
-        require(!idoClock.hasNoRegList, "hasNoRegList is already enabled.");
-
+        // Disabled: Can be set anytime. Does nothing if it has already been set before for a specific round.
+        if(!idoClock.hasNoRegList) {
         idoClock.hasNoRegList = true;
 
         emit HasNoRegListEnabled(idoRoundId);
+        }
     }
 
     /**
@@ -221,8 +189,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function setFyTokenMaxBasisPoints(uint32 idoRoundId, uint16 newFyTokenMaxBasisPoints) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
-        require(newFyTokenMaxBasisPoints <= 10000, "Basis points cannot exceed 10000");
-        require(block.timestamp < idoClock.idoStartTime, "Cannot change settings after IDO start");
+        //"Basis points cannot exceed 10000"
+        if (newFyTokenMaxBasisPoints > 10000) revert BasisPointsExceeded();
+        //"Cannot change settings after IDO start"
+        if (block.timestamp >= idoClock.idoStartTime) revert AlreadyStarted();
 
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
         idoConfig.fyTokenMaxBasisPoints = newFyTokenMaxBasisPoints;
@@ -247,11 +217,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function delayClaimableTime(uint32 idoRoundId, uint64 _newTime) external onlyOwner {
         IDOStructs.IDORoundClock storage ido = idoRoundClocks[idoRoundId];
-        require(_newTime > ido.initialClaimableTime, "New claimable time must be after current claimable time");
-        require(_newTime > ido.idoEndTime, "New claimable time must be after current ido time");
-        require(
-            _newTime <= ido.initialClaimableTime + 2 weeks, "New claimable time exceeds 2 weeks from initial claimable time"
-        );
+        //"New claimable time must be after current claimable time"
+        if (_newTime <= ido.claimableTime) revert NewTimeNotLaterThanCurrent();
+        if (_newTime <= ido.idoEndTime) revert Time1MustBeAfterTime2(_newTime, ido.idoEndTime);  
+        if (_newTime > ido.initialClaimableTime + 2 weeks) revert NewTimeExceedsTwoWeeksLimit();
+        
         emit ClaimableTimeDelayed(ido.claimableTime, _newTime);
 
         ido.claimableTime = _newTime;
@@ -266,10 +236,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function delayIdoEndTime(uint32 idoRoundId, uint64 _newTime) external onlyOwner {
         IDOStructs.IDORoundClock storage ido = idoRoundClocks[idoRoundId];
-        require(_newTime > ido.initialIdoEndTime, "New IDO end time must be after initial IDO end time");
-        require(_newTime <= ido.initialIdoEndTime + 2 weeks, "New IDO end time exceeds 2 weeks from initial IDO end time");
+        //"New IDO end time must be after current IDO end time"
+        if (_newTime <= ido.idoEndTime) revert NewTimeNotLaterThanCurrent();
+        if (_newTime > ido.initialIdoEndTime + 2 weeks) revert NewTimeExceedsTwoWeeksLimit();
         emit IdoEndTimeDelayed(ido.idoEndTime, _newTime);
-
 
         ido.idoEndTime = _newTime;
     }
@@ -286,11 +256,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * and emits a RefundClaim event.
         * @param idoRoundId The ID of the canceled IDO round.
         */
-    function claimRefund(uint32 idoRoundId) external canceled(idoRoundId){
+    function claimRefund(uint32 idoRoundId) external {
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
         IDOStructs.Position storage pos = idoConfig.accountPositions[msg.sender];
 
-        require(pos.amount > 0, "No funds to refund");
+        if (!idoRoundClocks[idoRoundId].isCanceled) revert NotCanceled();
+        if (pos.amount == 0) revert NoFundsToRefund();
 
         uint256 refundAmountFyToken = pos.fyAmount;
         uint256 refundAmountTokens = pos.amount;
@@ -344,15 +315,21 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         uint32 idoRoundId, 
         address token, 
         uint256 amount
-    ) external payable notFinalized(idoRoundId) enabled(idoRoundId) afterStart(idoRoundId) notCanceled(idoRoundId) {
+    ) external {
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+        IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
 
-        _basicParticipationCheck(idoRoundId, msg.sender, token, amount); // Standard participation checks
+        if (idoClock.isFinalized) revert AlreadyFinalized();
+        if (!idoClock.isEnabled) revert NotEnabled();
+        if (idoClock.isCanceled) revert AlreadyCanceled();
+        if(block.timestamp < idoClock.idoStartTime) revert NotStarted();
+
+        _basicParticipationCheck(idoConfig, idoClock, msg.sender, token, amount); // Standard participation checks
 
         // Calculate token allocation and check for funding cap excess
         uint256 tokenAllocation = (amount * 10**idoConfig.idoTokenDecimals) / idoConfig.idoPrice;
         uint256 newTotalTokens = idoConfig.fundedUSDValue + tokenAllocation;
-        require(newTotalTokens <= idoConfig.idoSize, "Funding cap exceeded");
+        if (newTotalTokens > idoConfig.idoSize) revert FundingCapExceeded();
 
         (uint16 participantRank, uint16 participantMultiplier) = _getParticipantData(idoRoundId, msg.sender);
 
@@ -380,15 +357,14 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
     /**
         * @dev Checks all conditions for participation in an IDO. Reverts if any conditions are not met.
-        * @param idoRoundId The ID of the IDO.
+        * @param idoConfig The Config Params of the IDO.
+        * @param idoClock The Clock Params of the IDO.
         * @param participant The address of the participant.
         * @param token The token used for participation.
         * @param amount The amount of the token.
         syntax on
     */
-    function _basicParticipationCheck(uint32 idoRoundId, address participant, address token, uint256 amount) internal view {
-        IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
-        IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
+    function _basicParticipationCheck(IDOStructs.IDORoundConfig storage idoConfig, IDOStructs.IDORoundClock storage idoClock, address participant, address token, uint256 amount) internal view {
 
         // Cache storage variables used multiple times to memory
         address buyToken = idoConfig.buyToken;
@@ -402,8 +378,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         // Ensure the participant is registered in the parent MetaIDO. Some rounds could be registerless. See flag.
         if (!idoClock.hasNoRegList) {
             uint32 parentMetaIdoId = idoClock.parentMetaIdoId;
-            require(parentMetaIdoId != 0, "No parent MetaIDO associated with this round.");
-            require(metaIDOs[parentMetaIdoId].isRegistered[participant], "Participant is not registered for the parent MetaIDO.");
+            if (parentMetaIdoId == 0) revert NonExistantMetaIDO(); //Parent MetaIDO does not exist.
+            if (!metaIDOs[parentMetaIdoId].isRegistered[participant]) revert ParticipantNotRegistered();
         }
 
         // Perform calculations after cheaper checks have passed
@@ -412,7 +388,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         // Check fyToken contribution limits
         if (token == fyToken) {
             uint256 maxFyTokenFunding = (idoConfig.idoSize * idoConfig.fyTokenMaxBasisPoints) / 10000;
-            require(globalTotalFunded <= maxFyTokenFunding, "fyToken contribution exceeds limit");
+            if (globalTotalFunded > maxFyTokenFunding) revert FyTokenContributionExceedsLimit();
         }
     }
 
@@ -432,16 +408,22 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
 
     /**
-        * @notice Claim refund and IDO tokens for a specific IDO.
+        * @notice Claim IDO tokens for a specific IDO.
         * @dev This function allows a staker to claim their allocated IDO tokens for the given IDO.
         * @param idoRoundId The ID of the IDO.
         * @param staker The address of the staker claiming the IDO tokens.
         */
 
-    function claimFromRound(uint32 idoRoundId, address staker) external claimable(idoRoundId) notCanceled(idoRoundId) {
+    function claimFromRound(uint32 idoRoundId, address staker) external {
+        IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
         IDOStructs.Position memory pos = ido.accountPositions[staker];
-        if (pos.amount == 0) revert NoStaking();
+        
+        if (!idoClock.isFinalized) revert NotFinalized();
+        if (block.timestamp < idoClock.claimableTime) revert NotClaimable();
+        if (idoClock.isCanceled) revert AlreadyCanceled();
+
+        if (pos.amount == 0) revert NoTokensToWithdraw();
 
         uint256 alloc = pos.tokenAllocation; 
         address idoToken = ido.idoToken;
@@ -463,17 +445,21 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @dev Allows the owner to withdraw unsold IDO tokens from a finalized round. Ensures that only spare tokens are withdrawn.
         * @param idoRoundId The ID of the IDO from which tokens are withdrawn.
         */
-    function withdrawSpareIDO(uint32 idoRoundId) external finalized(idoRoundId) onlyOwner {
+    function withdrawSpareIDO(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
+
+        if (!idoRoundClocks[idoRoundId].isFinalized) revert NotFinalized();
+
         address idoToken = ido.idoToken;
 
         uint256 contractBal = IERC20(idoToken).balanceOf(address(this));
         uint256 globalAllocation = globalTokenAllocPerIDORound[idoToken];
 
-        require(contractBal >= globalAllocation, "Contract balance less than global allocation");
+        // This should never happen, but left here as a safety check 
+        if(contractBal < globalAllocation) revert ContractBalanceLessThanGlobalAlloc(); 
 
         uint256 spareTokens = ido.idoSize - ido.idoTokensSold;
-        require(spareTokens > 0, "No spare tokens to withdraw");
+        if (spareTokens == 0) revert NoTokensToWithdraw();
 
         TokenTransfer._transferToken(idoToken, msg.sender, spareTokens);
         emit ExcessTokensWithdrawn(idoRoundId, idoToken, spareTokens);
@@ -519,9 +505,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function registerForMetaIDO(uint32 metaIdoId) external {
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
-        require(metaIDO.registrationEndTime != metaIDO.registrationStartTime, "Registration disabled for users");
-        require(block.timestamp >= metaIDO.registrationStartTime, "Registration has not started yet");
-        require(block.timestamp <= metaIDO.registrationEndTime, "Registration has ended");
+        // Round does not exist or registration has been disabled for users
+        if(metaIDO.registrationEndTime == metaIDO.registrationStartTime) revert RegistrationDisabledForUsers();
+        if (block.timestamp < metaIDO.registrationStartTime) revert RegistrationNotStarted(); 
+        if (block.timestamp > metaIDO.registrationEndTime) revert RegistrationEnded();
 
         (bool success, uint16 newRank, uint16 newMultiplier) = _registerUserForMetaIDO(metaIdoId, msg.sender);
 
@@ -538,7 +525,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param users An array of user addresses to register.
         */
     function adminAddRegForMetaIDO(uint32 metaIdoId, address[] calldata users) external onlyOwner {
-        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");
+        if (metaIdoId >= nextMetaIdoId) revert NonExistantMetaIDO(); //Trying to register users to an non existant MetaIDO.
 
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
         address[] memory newlyRegistered = new address[](users.length);
@@ -579,7 +566,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param users An array of user addresses to unregister.
         */
     function adminRemoveRegForMetaIDO(uint32 metaIdoId, address[] calldata users) external onlyOwner {
-        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");
+        if (metaIdoId >= nextMetaIdoId) revert NonExistantMetaIDO(); //Trying to remove users to an non existant MetaIDO.
 
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
         address[] memory removedUsers = new address[](users.length);
@@ -617,7 +604,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @return metaIdoId The unique identifier for the newly created MetaIDO
         */
     function createMetaIDO(uint32[] calldata roundIds, uint64 registrationStartTime, uint64 registrationEndTime) external onlyOwner returns (uint32) {
-        require(registrationEndTime >= registrationStartTime, "End time must be equal or after start time");
+        // inverterted the values in the check below for simplicity.
+        // NOTE: Both times can be set to the same timestamp (this is a feature). Disabling user reg, but allowing admin reg.
+        if (registrationEndTime < registrationStartTime) revert Time1MustBeAfterTime2(registrationEndTime, registrationStartTime);
 
         uint32 metaIdoId = nextMetaIdoId++;
         IDOStructs.MetaIDO storage newMetaIDO = metaIDOs[metaIdoId];
@@ -643,15 +632,17 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param addRound True to add the round to the MetaIDO, false to remove it
         */
     function manageRoundToMetaIDO(uint32 metaIdoId, uint32 roundId, bool addRound) public onlyOwner {
-        require(metaIdoId < nextMetaIdoId, "MetaIDO does not exist");  // Ensure the MetaIDO exists
-        require(idoRoundClocks[roundId].idoStartTime != 0, "IDO round does not exist");  // Check if the round exists
+        if (metaIdoId >= nextMetaIdoId) revert NonExistantMetaIDO(); 
+        if (idoRoundClocks[roundId].idoStartTime == 0) revert IDORoundNotInitialized(); // Check if the round exists
 
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
 
         if (addRound) {
             // Note: Registration can end after the IDO round starts.
-            require(metaIDOs[metaIdoId].registrationStartTime < idoRoundClocks[roundId].idoStartTime, "Registration must start before the IDO round begins.");
-            require(idoRoundClocks[roundId].parentMetaIdoId == 0, "IDO round already has a parent MetaIDO");
+            //"Registration must start before the IDO round begins."
+            if (metaIDOs[metaIdoId].registrationStartTime >= idoRoundClocks[roundId].idoStartTime) revert RegMustStartBeforeIdoRoundBegins(); 
+            //"IDO round already has a parent MetaIDO"
+            if (idoRoundClocks[roundId].parentMetaIdoId == 0) revert ExistingMetaIDO(); 
 
 
             metaIDO.roundIds.push(roundId);
@@ -686,8 +677,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         */
     function delayMetaIDORegEndTime(uint32 metaIdoId, uint64 newTime) external onlyOwner {
         IDOStructs.MetaIDO storage metaIDO = metaIDOs[metaIdoId];
-        require(newTime > metaIDO.registrationEndTime, "New registration end time must be after current end time");
-        require(newTime <= metaIDO.initialRegistrationEndTime + 2 weeks, "New registration end time exceeds 2 weeks from initial end time");
+
+        //"New registration end time must be after current end time"
+        if (newTime <= metaIDO.registrationEndTime) revert NewTimeNotLaterThanCurrent();
+        if (newTime > metaIDO.initialRegistrationEndTime + 2 weeks) revert NewTimeExceedsTwoWeeksLimit();
 
         emit MetaIDORegEndTimeDelayed(metaIdoId, metaIDO.registrationEndTime, newTime);
 
@@ -726,11 +719,15 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         bool standardMaxAllocMult
     ) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
-        require(idoClock.idoStartTime != 0, "IDO round not properly initialized");
-        require(!idoClock.isEnabled, "Cannot set specs for already enabled round");
-        require(maxRank >= minRank, "Max rank must be greater than or equal to min rank");
-        require(maxAlloc >= minAlloc, "Max allocation must be greater than or equal to min allocation");
-        require(minAlloc >= 1, "Minimum allocation must be at least 1");
+        if (idoClock.idoStartTime == 0) revert IDORoundNotInitialized();
+        //"Cannot set specs for already enabled round"
+        if (idoClock.isEnabled) revert IDORoundIsEnabled();
+        //"Max rank must be greater than or equal to min rank"
+        if (maxRank < minRank) revert MaxRankLessThanMinRank();
+        //"Max allocation must be greater than or equal to min allocation"
+        if (maxAlloc < minAlloc) revert MaxAllocLessThanMinAlloc();
+        //"Minimum allocation must be at least 1"
+        if (minAlloc == 0) minAlloc = 1;
 
         uint16 finalMaxAllocMultiplier = standardMaxAllocMult ? 10_000 : maxAllocMultiplier;
 
@@ -774,12 +771,14 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         // Check rank eligibility
         if (!idoSpec.noRank) {
-            require(participantRank >= idoSpec.minRank && participantRank <= idoSpec.maxRank, "Participant's rank is not eligible for this IDO round");
+            if (participantRank < idoSpec.minRank || participantRank > idoSpec.maxRank) {
+            revert ParticipantRankNotEligible(participantRank, idoSpec.minRank, idoSpec.maxRank);
+            }
         }
 
         // Check and calculate allocation
-        require(amount >= idoSpec.minAlloc, "Contribution below minimum allocation amount");
-
+        //"Contribution below minimum allocation amount"
+        if (amount < idoSpec.minAlloc) revert ContributionBelowMinAlloc();
         uint256 totalContribution = idoConfig.accountPositions[participant].amount + amount;
 
         uint256 maxAllocatedAmount = idoSpec.maxAlloc;
@@ -788,8 +787,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
             maxAllocatedAmount = (idoSpec.maxAlloc * participantMultiplier * idoSpec.maxAllocMultiplier) / 10000;
         } 
 
-        require(totalContribution <= maxAllocatedAmount, "Contribution exceeds maximum allocation amount");
-
+        //"Contribution exceeds maximum allocation amount"
+        if (totalContribution > maxAllocatedAmount) revert ContributionTotalAboveMaxAlloc();
     }
 
     /**
@@ -797,13 +796,13 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @dev Initiates a timelock for updating the multiplier contract. Can only be called by the owner.
         * @param _newMultiplierContract The address of the proposed new multiplier contract.
         * @custom:throws "Invalid multiplier contract address" if the proposed address is zero.
-        * @custom:throws "New address is the same as current" if the proposed address is the same as the current one.
         * @custom:throws "There is already a pending multiplier contract update" if there's an ongoing proposal.
         */
     function proposeMultiplierContractUpdate(address _newMultiplierContract) external onlyOwner {
-        require(_newMultiplierContract != address(0), "Invalid multiplier contract address");
-        require(_newMultiplierContract != address(multiplierContract), "New address is the same as current");
-        require(proposedMultiplierContract == address(0), "There is already a pending multiplier contract update");
+        if(_newMultiplierContract == address(0)) revert newMultiplierIsZeroAddress();
+        
+        //"There is already a pending multiplier contract update"
+        if(proposedMultiplierContract != address(0)) revert updatePending(multiplierContractUpdateUnlockTime); 
 
         proposedMultiplierContract = _newMultiplierContract;
         multiplierContractUpdateUnlockTime = block.timestamp + MULTIPLIER_UPDATE_DELAY;
@@ -818,8 +817,10 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @custom:throws "Multiplier contract update is still locked" if the timelock period hasn't elapsed.
         */
     function executeMultiplierContractUpdate() external onlyOwner {
-        require(proposedMultiplierContract != address(0), "No multiplier contract update proposed");
-        require(block.timestamp >= multiplierContractUpdateUnlockTime, "Multiplier contract update is still locked");
+        //"No multiplier contract update proposed"
+        if (proposedMultiplierContract == address(0)) revert updatePending(0);
+        //"Multiplier contract update is still locked"
+        if (block.timestamp < multiplierContractUpdateUnlockTime) revert updatePending(multiplierContractUpdateUnlockTime);
 
         address oldContract = address(multiplierContract);
         multiplierContract = IMultiplierContract(proposedMultiplierContract);

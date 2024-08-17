@@ -3,14 +3,12 @@ pragma solidity ^0.8.20;
 
 interface IIDOPool {
     error InvalidParticipateToken(address token);
-    error ParticipateWithDifferentToken(address token);
     error AlreadyFinalized();
     error NotEnabled();
     error NotFinalized();
     error AlreadyCanceled();
     error NotCanceled();
-    error NotStaker(address);
-    error NoStaking();
+    error NoTokensToWithdraw();
     error NotStarted();
     error AlreadyStarted();
     error FudingGoalNotReached();
@@ -19,6 +17,38 @@ interface IIDOPool {
     error FailedToRegisterUser(); //Failed to register to MetaIDO
     error RegisterRankNotHigher(uint16 currentRank, uint16 newRank);
 
+    error MaxRankLessThanMinRank();
+    error MaxAllocLessThanMinAlloc(); 
+
+    error Time1MustBeAfterTime2(uint64 time1, uint64 time2);
+    error NewTimeNotLaterThanCurrent();
+    error NewTimeExceedsTwoWeeksLimit();
+
+    error IDORoundNotInitialized();
+    error IDORoundIsEnabled();
+
+    error NoFundsToRefund();
+    error NonExistantMetaIDO();
+    error ExistingMetaIDO();
+    error ParticipantNotRegistered();
+    error FyTokenContributionExceedsLimit();
+
+    error ContractBalanceLessThanGlobalAlloc();
+    error RegMustStartBeforeIdoRoundBegins();
+    error BasisPointsExceeded();
+
+    error RegistrationNotStarted();
+    error RegistrationEnded();
+    error RegistrationDisabledForUsers();
+    error newMultiplierIsZeroAddress();
+    error updatePending(uint256 updateTimestamp);
+
+    error InsufficientFundsToEnableIDORound();
+    error IDORoundSpecsNotSet();    
+    error FundingCapExceeded();
+    error ContributionBelowMinAlloc();
+    error ContributionTotalAboveMaxAlloc();
+    error ParticipantRankNotEligible(uint16 participantRank, uint16 minRank, uint16 maxRank);
     event Participation(address indexed account, address token, uint256 amount, uint256 tokenAllocation);
 
     event Claim(address indexed account, uint256 idoAmount);
