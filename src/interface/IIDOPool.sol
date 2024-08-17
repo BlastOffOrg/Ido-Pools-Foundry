@@ -33,7 +33,6 @@ interface IIDOPool {
     error ParticipantNotRegistered();
     error FyTokenContributionExceedsLimit();
 
-    error ContractBalanceLessThanGlobalAlloc();
     error RegMustStartBeforeIdoRoundBegins();
     error BasisPointsExceeded();
 
@@ -49,6 +48,7 @@ interface IIDOPool {
     error ContributionBelowMinAlloc();
     error ContributionTotalAboveMaxAlloc();
     error ParticipantRankNotEligible(uint16 participantRank, uint16 minRank, uint16 maxRank);
+    error ImpossibleFundingGoal();
     event Participation(address indexed account, address token, uint256 amount, uint256 tokenAllocation);
 
     event Claim(address indexed account, uint256 idoAmount);

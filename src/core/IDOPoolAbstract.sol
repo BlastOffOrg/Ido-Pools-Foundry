@@ -71,6 +71,8 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         config.fyTokenMaxBasisPoints = fyTokenMaxBasisPoints;
         config.fundedUSDValue = 0;
 
+        if (minimumFundingGoal > idoSize * idoPrice / 10**config.idoTokenDecimals) revert ImpossibleFundingGoal();
+
         emit IDOCreated(idoRoundId, idoName, idoToken, idoPrice, idoSize, minimumFundingGoal, idoStartTime, idoEndTime, claimableTime);
     }
 
@@ -328,7 +330,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         // Calculate token allocation and check for funding cap excess
         uint256 tokenAllocation = (amount * 10**idoConfig.idoTokenDecimals) / idoConfig.idoPrice;
-        uint256 newTotalTokens = idoConfig.fundedUSDValue + tokenAllocation;
+        uint256 newTotalTokens = idoConfig.idoTokensSold + tokenAllocation;
         if (newTotalTokens > idoConfig.idoSize) revert FundingCapExceeded();
 
         (uint16 participantRank, uint16 participantMultiplier) = _getParticipantData(idoRoundId, msg.sender);
@@ -387,8 +389,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
         // Check fyToken contribution limits
         if (token == fyToken) {
-            uint256 maxFyTokenFunding = (idoConfig.idoSize * idoConfig.fyTokenMaxBasisPoints) / 10000;
-            if (globalTotalFunded > maxFyTokenFunding) revert FyTokenContributionExceedsLimit();
+            uint256 maxFyTokenFundingInIdoTokens = (idoConfig.idoSize * idoConfig.fyTokenMaxBasisPoints) / 10000;
+            // convert maxFyTokenFundingInIdoTokens to the correct unit measure
+            uint256 maxFyTokenFundingInFyTokens = (maxFyTokenFundingInIdoTokens * idoConfig.idoPrice) / 10**idoConfig.idoTokenDecimals;
+            if (idoConfig.totalFunded[fyToken] + amount > maxFyTokenFundingInFyTokens) {
+                revert FyTokenContributionExceedsLimit();
+            }
         }
     }
 
@@ -446,24 +452,16 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param idoRoundId The ID of the IDO from which tokens are withdrawn.
         */
     function withdrawSpareIDO(uint32 idoRoundId) external onlyOwner {
-        IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
-
-        if (!idoRoundClocks[idoRoundId].isFinalized) revert NotFinalized();
-
-        address idoToken = ido.idoToken;
+        address idoToken = idoRoundConfigs[idoRoundId].idoToken;
 
         uint256 contractBal = IERC20(idoToken).balanceOf(address(this));
         uint256 globalAllocation = globalTokenAllocPerIDORound[idoToken];
 
-        // This should never happen, but left here as a safety check 
-        if(contractBal < globalAllocation) revert ContractBalanceLessThanGlobalAlloc(); 
-
-        uint256 spareTokens = ido.idoSize - ido.idoTokensSold;
+        uint256 spareTokens = contractBal - globalAllocation;
         if (spareTokens == 0) revert NoTokensToWithdraw();
 
         TokenTransfer._transferToken(idoToken, msg.sender, spareTokens);
         emit ExcessTokensWithdrawn(idoRoundId, idoToken, spareTokens);
-
     }
 
     // ======================================    
@@ -642,7 +640,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
             //"Registration must start before the IDO round begins."
             if (metaIDOs[metaIdoId].registrationStartTime >= idoRoundClocks[roundId].idoStartTime) revert RegMustStartBeforeIdoRoundBegins(); 
             //"IDO round already has a parent MetaIDO"
-            if (idoRoundClocks[roundId].parentMetaIdoId == 0) revert ExistingMetaIDO(); 
+            if (idoRoundClocks[roundId].parentMetaIdoId != 0) revert ExistingMetaIDO(); 
 
 
             metaIDO.roundIds.push(roundId);
