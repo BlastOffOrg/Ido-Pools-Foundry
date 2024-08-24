@@ -5,6 +5,12 @@ import "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.s
 import "./core/IDOPoolAbstract.sol";
 
 contract StandardIDOPool is Initializable, IDOPoolAbstract {
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     function init(
         address treasury_,
         address _multiplierContract
