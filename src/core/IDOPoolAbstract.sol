@@ -384,9 +384,6 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
             if (!metaIDOs[parentMetaIdoId].isRegistered[participant]) revert ParticipantNotRegistered();
         }
 
-        // Perform calculations after cheaper checks have passed
-        uint256 globalTotalFunded = idoConfig.totalFunded[buyToken] + idoConfig.totalFunded[fyToken] + amount;
-
         // Check fyToken contribution limits
         if (token == fyToken) {
             uint256 maxFyTokenFundingInIdoTokens = (idoConfig.idoSize * idoConfig.fyTokenMaxBasisPoints) / 10000;
