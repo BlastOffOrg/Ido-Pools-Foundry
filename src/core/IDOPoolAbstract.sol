@@ -25,7 +25,22 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     // =============== Owner IDORound ==============
     // =============================================
 
-
+    /**
+         * @notice Creates a new IDO round with specified parameters
+         * @dev Only callable by the owner
+         * @param idoName Name of the IDO
+         * @param idoToken Address of the token being offered in the IDO
+         * @param buyToken Address of the token used to buy into the IDO
+         * @param fyToken Address of the FY token (should be same value as buyToken)
+         * @param idoPrice Price of 1 whole IDO token in buyToken/fyToken's smallest units (excluding IDO token's decimals)
+         * @param idoSize Total amount of idoToken in raw token amount (including decimals)
+         * @param minimumFundingGoal Minimum funding goal in value for the IDO (IdoPrice * IdoSize / IdoTokenDecimals)
+         * @param fyTokenMaxBasisPoints Maximum percentage of fyToken contributions in basis points. Should not exceed 10_000
+         * @param idoStartTime Start time of the IDO
+         * @param idoEndTime End time of the IDO
+         * @param claimableTime Time when tokens become claimable
+         * @custom:throws ImpossibleFundingGoal if the minimum funding goal is higher than the total IDO value
+         */
     function createIDORound(
         string calldata idoName,
         address idoToken,
@@ -68,8 +83,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         config.idoTokensSold = 0;
         config.idoTokensClaimed = 0;
         config.minimumFundingGoal = minimumFundingGoal;
-        config.fyTokenMaxBasisPoints = fyTokenMaxBasisPoints;
         config.fundedUSDValue = 0;
+
+        //"Basis points cannot exceed 10000"
+        if (fyTokenMaxBasisPoints > 10000) revert BasisPointsExceeded();
+
+        config.fyTokenMaxBasisPoints = fyTokenMaxBasisPoints;
 
         if (minimumFundingGoal > idoSize * idoPrice / 10**config.idoTokenDecimals) revert ImpossibleFundingGoal();
 
@@ -79,9 +98,14 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     /**
         * @notice Finalize the IDO pool for a specific IDO.
         * @dev This function finalizes the given IDO, calculates the total value of USD funded, and determines the IDO size.
-        * It cannot be finalized if the IDO has not reached its end time or the minimum funding goal is not met.
-        * It also reduces the global token allocation by the amount of unsold tokens.
+        *       It cannot be finalized if the IDO has not reached its end time, the minimum funding goal is not met,
+        *       or if it's already finalized or canceled.
+        *       It also reduces the global token allocation by the amount of unsold tokens.
         * @param idoRoundId The ID of the IDO to finalize.
+        * @custom:throws AlreadyCanceled if the IDO has been canceled
+        * @custom:throws AlreadyFinalized if the IDO has already been finalized
+        * @custom:throws IDONotEnded if the IDO end time hasn't been reached
+        * @custom:throws FudingGoalNotReached if the minimum funding goal wasn't met
         */
     function finalizeRound(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
@@ -107,7 +131,9 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     /**
         * @notice Cancels an IDO round. This can only be done by the owner, and allows participants to claim refunds.
         * @dev Sets the `isCanceled` flag and prevents further participation or finalization.
+        *       Reduces global token allocation based on whether the round is finalized or not.
         * @param idoRoundId The ID of the IDO to cancel.
+        * @custom:throws AlreadyCanceled if the IDO has already been canceled
         */
     function cancelIDORound(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
@@ -133,10 +159,17 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     }
 
     /**
-        * @notice This function enables an IDO round if it meets all requirements, including sufficient token reserves across all rounds.
-        * @dev Only callable by the owner. Ensures tokens for this and all other enabled rounds do not exceed the token balance.
-        * @param idoRoundId The identifier of the IDO round to enable.
-        */
+         * @notice This function enables an IDO round if it meets all requirements, including sufficient token reserves across all rounds.
+         * @dev Only callable by the owner. Ensures tokens for this and all other enabled rounds do not exceed the token balance.
+         *      Checks if the round is not already enabled, initialized, canceled, or finalized.
+         * @param idoRoundId The identifier of the IDO round to enable.
+         * @custom:throws IDORoundIsEnabled if the round is already enabled
+         * @custom:throws IDORoundNotInitialized if the round is not properly initialized
+         * @custom:throws AlreadyCanceled if the round has been canceled
+         * @custom:throws AlreadyFinalized if the round has been finalized
+         * @custom:throws IDORoundSpecsNotSet if the round specifications haven't been set
+         * @custom:throws InsufficientFundsToEnableIDORound if there are not enough tokens to enable the round
+         */
     function enableIDORound(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
@@ -166,11 +199,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     }
 
     /**
-        * @notice Enables the no registration list requirement for a specific IDO round if it's not already enabled.
-        * @dev Sets `hasNoRegList` to true for the specified IDO round, indicating that participants do not need to be registered.
-        *      Can only be set once. Nothing happens if it is set multiple times.
-        * @param idoRoundId The identifier of the IDO round to modify.
-        */
+         * @notice Enables the no registration list requirement for a specific IDO round if it's not already enabled.
+         * @dev Sets `hasNoRegList` to true for the specified IDO round, indicating that participants do not need to be registered.
+         *      Does nothing if `hasNoRegList` is already true.
+         * @param idoRoundId The identifier of the IDO round to modify.
+         */
     function enableHasNoRegList(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
 
@@ -411,12 +444,15 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
 
 
     /**
-        * @notice Claim IDO tokens for a specific IDO.
-        * @dev This function allows a staker to claim their allocated IDO tokens for the given IDO.
-        * @param idoRoundId The ID of the IDO.
-        * @param staker The address of the staker claiming the IDO tokens.
-        */
-
+         * @notice Claim IDO tokens for a specific IDO.
+         * @dev This function allows a staker to claim their allocated IDO tokens for the given IDO.
+         * @param idoRoundId The ID of the IDO.
+         * @param staker The address of the staker claiming the IDO tokens.
+         * @custom:throws NotFinalized if the IDO round is not finalized
+         * @custom:throws NotClaimable if the claim period hasn't started
+         * @custom:throws AlreadyCanceled if the IDO round has been canceled
+         * @custom:throws NoTokensToWithdraw if the staker has no tokens to claim
+         */
     function claimFromRound(uint32 idoRoundId, address staker) external {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
         IDOStructs.IDORoundConfig storage ido = idoRoundConfigs[idoRoundId];
@@ -444,10 +480,12 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     }
 
     /**
-        * @notice Withdraw remaining unsold IDO tokens after the round is finalized.
-        * @dev Allows the owner to withdraw unsold IDO tokens from a finalized round. Ensures that only spare tokens are withdrawn.
-        * @param idoRoundId The ID of the IDO from which tokens are withdrawn.
-        */
+         * @notice Withdraw excess IDO tokens from the contract.
+         * @dev Allows the owner to withdraw excess IDO tokens from the contract. 
+         *      Calculates spare tokens based on contract balance and global allocation.
+         * @param idoRoundId The ID of the IDO from which tokens are withdrawn.
+         * @custom:throws NoTokensToWithdraw if there are no excess tokens to withdraw
+         */
     function withdrawSpareIDO(uint32 idoRoundId) external onlyOwner {
         address idoToken = idoRoundConfigs[idoRoundId].idoToken;
 
@@ -592,12 +630,14 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
     // ======================================    
 
     /**
-        * @notice Creates a new MetaIDO and returns its unique identifier
-        * @dev Increments the internal counter to assign a new ID and ensures uniqueness
-        * @param registrationStartTime The start time for registration.
-        * @param registrationEndTime The end time for registration, also set as initialRegistrationEndTime.
-        * @return metaIdoId The unique identifier for the newly created MetaIDO
-        */
+         * @notice Creates a new MetaIDO and returns its unique identifier
+         * @dev Increments the internal counter to assign a new ID and ensures uniqueness
+         * @param roundIds An array of IDO round IDs to associate with this MetaIDO
+         * @param registrationStartTime The start time for registration.
+         * @param registrationEndTime The end time for registration, also set as initialRegistrationEndTime.
+         * @return metaIdoId The unique identifier for the newly created MetaIDO
+         * @custom:throws Time1MustBeAfterTime2 if registrationEndTime is before registrationStartTime
+         */
     function createMetaIDO(uint32[] calldata roundIds, uint64 registrationStartTime, uint64 registrationEndTime) external onlyOwner returns (uint32) {
         // inverterted the values in the check below for simplicity.
         // NOTE: Both times can be set to the same timestamp (this is a feature). Disabling user reg, but allowing admin reg.
