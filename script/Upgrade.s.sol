@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "../src/StandardIDOPool.sol"; // Your new version
-import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import "../lib/openzeppelin-contracts/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
+import "../lib/openzeppelin-contracts/contracts/proxy/transparent/ProxyAdmin.sol";
 
 contract UpgradeScript is Script {
     function run() external {
