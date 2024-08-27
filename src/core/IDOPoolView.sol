@@ -19,7 +19,6 @@ abstract contract IDOPoolView is IDOStorage {
         uint256 buyTokenAmount;
         uint256 idoTokensAllocated;
         uint256 maxAllocation;
-        bool isEligible;
     }
 
     /**
@@ -69,39 +68,39 @@ abstract contract IDOPoolView is IDOStorage {
     }
 
     /**
-     * @notice Retrieves all IDO round IDs associated with a specific MetaIDO.
-     * @param metaIdoId The ID of the MetaIDO.
-     * @return An array of IDO round IDs associated with the specified MetaIDO.
-     */
+        * @notice Retrieves all IDO round IDs associated with a specific MetaIDO.
+        * @param metaIdoId The ID of the MetaIDO.
+        * @return An array of IDO round IDs associated with the specified MetaIDO.
+        */
     function getIDORoundsByMetaIDO(uint32 metaIdoId) external view returns (uint32[] memory) {
         return metaIDOs[metaIdoId].roundIds;
     }
 
     /**
-     * @notice Retrieves the associated MetaIDO ID for a given IDO round.
-     * @param idoRoundId The ID of the IDO round.
-     * @return The ID of the associated MetaIDO.
-     */
+        * @notice Retrieves the associated MetaIDO ID for a given IDO round.
+        * @param idoRoundId The ID of the IDO round.
+        * @return The ID of the associated MetaIDO.
+        */
     function getMetaIDOByIDORound(uint32 idoRoundId) external view returns (uint32) {
         return idoRoundClocks[idoRoundId].parentMetaIdoId;
     }
 
 
     /**
-     * @notice Checks if a user is registered for a specific MetaIDO.
-     * @param user The address of the user to check.
-     * @param metaIdoId The ID of the MetaIDO.
-     * @return A boolean indicating whether the user is registered for the specified MetaIDO.
-     */
+        * @notice Checks if a user is registered for a specific MetaIDO.
+        * @param user The address of the user to check.
+        * @param metaIdoId The ID of the MetaIDO.
+        * @return A boolean indicating whether the user is registered for the specified MetaIDO.
+        */
     function getCheckUserRegisteredForMetaIDO(address user, uint32 metaIdoId) external view returns (bool) {
         return metaIDOs[metaIdoId].isRegistered[user];
     }
 
     /**
-     * @notice Retrieves a user's registration information for all MetaIDOs they are registered for.
-     * @param user The address of the user.
-     * @return An array of UserMetaIDOInfo structs containing the user's registration details for each MetaIDO.
-     */
+        * @notice Retrieves a user's registration information for all MetaIDOs they are registered for.
+        * @param user The address of the user.
+        * @return An array of UserMetaIDOInfo structs containing the user's registration details for each MetaIDO.
+        */
     function getUserMetaIDOInfo(address user) external view returns (UserMetaIDOInfo[] memory) {
         uint32[] memory registeredMetaIDOs = new uint32[](nextMetaIdoId);
         uint32 count = 0;
@@ -130,7 +129,7 @@ abstract contract IDOPoolView is IDOStorage {
         return userInfo;
     }
 
-    /**
+/**
      * @notice Retrieves participation information for a user across multiple IDO rounds
      * @dev This function aggregates user participation data for specified IDO rounds
      * @param user The address of the user to query
@@ -148,24 +147,14 @@ abstract contract IDOPoolView is IDOStorage {
             IDOStructs.IDORoundSpec storage spec = idoRoundSpecs[roundId];
 
             if (position.amount > 0 || spec.specsInitialized) {
-                uint32 parentMetaIdoId = idoRoundClocks[roundId].parentMetaIdoId;
-                uint16 userRank = metaIDOs[parentMetaIdoId].userRank[user];
-                uint16 userMultiplier = metaIDOs[parentMetaIdoId].userMaxAllocMult[user];
-
-                bool isEligible = spec.noRank || (userRank >= spec.minRank && userRank <= spec.maxRank);
-                uint256 maxAllocation = spec.maxAlloc;
-
-                if (isEligible && !spec.noMultiplier) {
-                    maxAllocation = (maxAllocation * userMultiplier * spec.maxAllocMultiplier) / 1e8;
-                }
+                uint256 maxAllocation = getUserMaxAlloc(roundId, user);
 
                 participations[count] = UserParticipationInfo(
                     roundId,
                     position.fyAmount,
                     position.amount - position.fyAmount,
                     position.tokenAllocation,
-                    maxAllocation,
-                    isEligible
+                    maxAllocation
                 );
                 count++;
             }
@@ -174,5 +163,64 @@ abstract contract IDOPoolView is IDOStorage {
         assembly { mstore(participations, count) }
         return participations;
     }
+
+    /**
+         * @notice Calculates the maximum allocation for a participant in a specific IDO round
+         * @dev This function takes into account the IDO round specifications, registration requirements,
+         *      user rank, and multipliers to determine the maximum allocation
+         * @param idoRoundId The ID of the IDO round
+         * @param participant The address of the participant
+         * @return maxAllocation The maximum allocation for the participant in the IDO round
+         *
+         * The function returns 0 in the following cases:
+         * - If the IDO round specifications are not initialized
+         * - If registration is required and the participant is not registered
+         * - If the participant's rank is not eligible for the IDO round
+         *
+         * The calculation of maxAllocation considers:
+         * - The base maxAlloc from the IDO round specifications
+         * - The participant's rank and whether rank checks are enabled
+         * - The participant's multiplier and the IDO round's maxAllocMultiplier, if multipliers are enabled
+         */
+    function getUserMaxAlloc(
+        uint32 idoRoundId,
+        address participant
+    ) public view returns (uint256 maxAllocation) {
+        IDOStructs.IDORoundSpec storage spec = idoRoundSpecs[idoRoundId];
+
+        // Check if specs are initialized
+        if (!spec.specsInitialized) {
+            return 0;
+        }
+
+        uint32 parentMetaIdoId = idoRoundClocks[idoRoundId].parentMetaIdoId;
+
+        // Check for no registration list case
+        if (!idoRoundClocks[idoRoundId].hasNoRegList) {
+            // If registration is required, check if the participant is registered
+            if (!metaIDOs[parentMetaIdoId].isRegistered[participant]) {
+                return 0; // Return 0 if the participant is not registered
+            }
+        }
+
+        uint16 userRank = metaIDOs[parentMetaIdoId].userRank[participant];
+        uint16 userMultiplier = metaIDOs[parentMetaIdoId].userMaxAllocMult[participant];
+
+        bool isEligible = spec.noRank || (userRank >= spec.minRank && userRank <= spec.maxRank);
+
+        if (!isEligible) {
+            return 0;
+        }
+
+        maxAllocation = spec.maxAlloc;
+
+        if (!spec.noMultiplier) {
+            // userMultiplier is a simple integer, maxAllocMultiplier is in basis points
+            maxAllocation = (maxAllocation * userMultiplier * spec.maxAllocMultiplier) / 10_000;
+        }
+
+        return maxAllocation;
+    }
+
 }
 
