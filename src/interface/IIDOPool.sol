@@ -11,8 +11,8 @@ interface IIDOPool {
     error NoTokensToWithdraw();
     error NotStarted();
     error AlreadyStarted();
-    error FudingGoalNotReached();
-    error IDONotEnded();
+    error FundingGoalNotReached(uint256 fundedUSDValue, uint256 minimumFundingGoal);
+    error IDONotEnded(uint64 idoEndTime);
     error NotClaimable();
     error FailedToRegisterUser(); //Failed to register to MetaIDO
     error RegisterRankNotHigher(uint16 currentRank, uint16 newRank);
@@ -45,8 +45,8 @@ interface IIDOPool {
     error InsufficientFundsToEnableIDORound();
     error IDORoundSpecsNotSet();    
     error FundingCapExceeded();
-    error ContributionBelowMinAlloc();
-    error ContributionTotalAboveMaxAlloc();
+    error ContributionBelowMinAlloc(uint256 contributionAmount, uint256 minAlloc);
+    error ContributionTotalAboveMaxAlloc(uint256 totalContribution, uint256 maxAllocatedAmount);
     error ParticipantRankNotEligible(uint16 participantRank, uint16 minRank, uint16 maxRank);
     error ImpossibleFundingGoal();
     event Participation(address indexed account, address token, uint256 amount, uint256 tokenAllocation);

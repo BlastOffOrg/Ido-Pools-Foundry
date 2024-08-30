@@ -23,7 +23,7 @@ interface IStakingContract {
 interface IMultiplierContract {
     /// @notice Retrieves the multiplier and rank for a given user
     /// @param user The address of the user to query
-    /// @return multiplier The multiplier value corresponding to the user's staked amount
+    /// @return multiplier The multiplier value corresponding to the user's staked amount. In integers, 1x,2x,3x,...
     /// @return rank The rank or level that corresponds to the user's staked amount
     function getMultiplier(address user) external view returns (uint256 multiplier, uint256 rank);
 }
@@ -77,9 +77,9 @@ contract MultiplierContract {
     /// @dev This function initializes a timelocked update which must pass the duration before being executed.
     ///      Each array of levels, thresholds, and multipliers must be sorted in strictly ascending order
     ///      and match in length. Levels must increment by 1 without gaps.
-    /// @param levels An array of consecutive integer levels starting from any integer greater than zero.
-    /// @param thresholds An array of thresholds corresponding to each level, must be strictly increasing.
-    /// @param multipliers An array of multipliers corresponding to each level, must be non-decreasing.
+    /// @param levels An array of consecutive integer levels starting from any integer greater than zero. Value is in integer. 1,2,3,...
+    /// @param thresholds An array of thresholds corresponding to each level, must be strictly increasing. Value is in wei.
+    /// @param multipliers An array of multipliers corresponding to each level, must be non-decreasing. Value is in integer. 1,2,3,...
     /// @custom:security onlyAdmin This function can only be called by the admin.
     function proposeMultipleUpdates(uint256[] calldata levels, uint256[] calldata thresholds, uint256[] calldata multipliers) external onlyAdmin {
         require(!pendingUpdate.pending, "There is already a pending update");

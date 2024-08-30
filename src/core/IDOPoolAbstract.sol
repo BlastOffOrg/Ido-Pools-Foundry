@@ -105,7 +105,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @custom:throws AlreadyCanceled if the IDO has been canceled
         * @custom:throws AlreadyFinalized if the IDO has already been finalized
         * @custom:throws IDONotEnded if the IDO end time hasn't been reached
-        * @custom:throws FudingGoalNotReached if the minimum funding goal wasn't met
+        * @custom:throws FundingGoalNotReached if the minimum funding goal wasn't met
         */
     function finalizeRound(uint32 idoRoundId) external onlyOwner {
         IDOStructs.IDORoundClock storage idoClock = idoRoundClocks[idoRoundId];
@@ -117,15 +117,20 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         uint256 idoTokensSold = idoConfig.idoTokensSold;
         uint256 idoSize = idoConfig.idoSize;
 
-        if (block.timestamp < idoClock.idoEndTime) revert IDONotEnded();
-        if (idoConfig.fundedUSDValue < idoConfig.minimumFundingGoal) revert FudingGoalNotReached();
+        uint64 idoEndTime = idoClock.idoEndTime;
+        if (block.timestamp < idoEndTime) revert IDONotEnded(idoEndTime);
+
+        uint256 fundedUSDValue = idoConfig.fundedUSDValue;
+        uint256 minimumFundingGoal = idoConfig.minimumFundingGoal;
+
+        if (fundedUSDValue < minimumFundingGoal) revert FundingGoalNotReached(fundedUSDValue, minimumFundingGoal);
 
         idoClock.isFinalized = true;
         // Reduce global token allocation by the unsold tokens
         uint256 unsoldTokens = idoSize - idoTokensSold;
         globalTokenAllocPerIDORound[idoConfig.idoToken] -= unsoldTokens;
 
-        emit Finalized(idoRoundId, idoConfig.fundedUSDValue, idoTokensSold, idoSize);
+        emit Finalized(idoRoundId, fundedUSDValue, idoTokensSold, idoSize);
     }
 
     /**
@@ -433,7 +438,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param idoRoundId The ID of the IDO round.
         * @param participant The address of the participant.
         * @return participantRank The rank of the participant.
-        * @return participantMultiplier The multiplier of the participant.
+        * @return participantMultiplier The multiplier of the participant. The value is in integer.
         */
     function _getParticipantData(uint32 idoRoundId, address participant) internal view returns (uint16 participantRank, uint16 participantMultiplier) {
         uint32 parentMetaIdoId = idoRoundClocks[idoRoundId].parentMetaIdoId;
@@ -789,7 +794,7 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         * @param participant The address of the participant.
         * @param amount The amount the participant is attempting to contribute.
         * @param participantRank The rank of the participant, queried externally before calling this function.
-        * @param participantMultiplier The multiplier of the participant, queried externally before calling this function.
+        * @param participantMultiplier The multiplier of the participant, queried externally before calling this function. Value is in integer. 1x,2x,3x,...
         * @custom:throws "Participant's rank is not eligible for this IDO round" if the participant's rank is outside the allowed range.
         * @custom:throws "Contribution below minimum allocation amount" if the contribution is less than the minimum allowed.
         * @custom:throws "Contribution exceeds maximum allocation amount" if the total contribution is more than the maximum allowed.
@@ -805,25 +810,34 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
 
         // Check rank eligibility
-        if (!idoSpec.noRank) {
-            if (participantRank < idoSpec.minRank || participantRank > idoSpec.maxRank) {
-            revert ParticipantRankNotEligible(participantRank, idoSpec.minRank, idoSpec.maxRank);
+        bool noRank = idoSpec.noRank;
+        if (!noRank) {
+            uint16 minRank = idoSpec.minRank;
+            uint16 maxRank = idoSpec.maxRank;
+
+            if (participantRank < minRank || participantRank > maxRank) {
+            revert ParticipantRankNotEligible(participantRank, minRank, maxRank);
             }
         }
 
         // Check and calculate allocation
         //"Contribution below minimum allocation amount"
-        if (amount < idoSpec.minAlloc) revert ContributionBelowMinAlloc();
+        if (amount < idoSpec.minAlloc) revert ContributionBelowMinAlloc(amount, idoSpec.minAlloc);
         uint256 totalContribution = idoConfig.accountPositions[participant].amount + amount;
 
-        uint256 maxAllocatedAmount = idoSpec.maxAlloc;
+        uint256 maxAlloc = idoSpec.maxAlloc; // For clarity. Could have used value below.
+        uint256 maxAllocatedAmount = maxAlloc;
 
         if (!idoSpec.noMultiplier) {
-            maxAllocatedAmount = (idoSpec.maxAlloc * participantMultiplier * idoSpec.maxAllocMultiplier) / 10000;
+            uint256 maxAllocMultiplier = idoSpec.maxAllocMultiplier;
+            maxAllocatedAmount = (maxAlloc * participantMultiplier * maxAllocMultiplier) / 10000;
+            if(noRank && participantRank == 0) {
+                maxAllocatedAmount = (maxAlloc * 1 * maxAllocMultiplier) / 10000;
+            }
         } 
 
         //"Contribution exceeds maximum allocation amount"
-        if (totalContribution > maxAllocatedAmount) revert ContributionTotalAboveMaxAlloc();
+        if (totalContribution > maxAllocatedAmount) revert ContributionTotalAboveMaxAlloc(totalContribution, maxAllocatedAmount);
     }
 
     /**
