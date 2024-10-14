@@ -12,9 +12,9 @@ contract UpgradeScript is Script {
 
         // Read addresses from environment variables
         // Address of the existing proxy (from your previous deployment)
-        address proxyAddress = vm.envAddress("PROXY_ADDRESS");
+        address proxyAddress = vm.envAddress("IDO_POOL_PROXY_CA");
         // Address of the existing ProxyAdmin (from your previous deployment)
-        address proxyAdminAddress = vm.envAddress("PROXY_ADMIN_ADDRESS");
+        address proxyAdminAddress = vm.envAddress("IDO_POOL_PROXY_ADMIN");
 
         // Deploy the new implementation
         StandardIDOPool newImplementation = new StandardIDOPool();

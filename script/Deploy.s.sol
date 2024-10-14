@@ -12,7 +12,7 @@ contract DeployScript is Script {
         vm.startBroadcast();
 
         // Deploy MultiplierContract
-        address stakingContractAddress = address(0); // Replace with actual address
+        address stakingContractAddress = address(vm.envAddress("TOKEN_STAKING_CA")); // Remember to load .env or .env.local
         MultiplierContract multiplierContract = new MultiplierContract(stakingContractAddress);
 
         // Deploy StandardIDOPool implementation
@@ -26,6 +26,8 @@ contract DeployScript is Script {
             StandardIDOPool.init.selector,
             msg.sender,
             address(multiplierContract)
+            // In case the mutliplier does not need updating, comment out this line and comment line 16
+            //address(vm.envAddress("MUTLIPLIER_CA"))
         );
 
         // Deploy TransparentUpgradeableProxy
