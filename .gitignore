@@ -9,3 +9,5 @@ out/
 # Docs
 docs/
 
+# IDE
+.idea
