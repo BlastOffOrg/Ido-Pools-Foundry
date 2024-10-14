@@ -27,8 +27,8 @@ enum YieldMode {
 
 contract BlastYieldAbstract is Ownable2StepUpgradeable {
     IBlast private constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
-    IERC20Rebasing private constant USDB = IERC20Rebasing(0x4300000000000000000000000000000000000003);
-    IERC20Rebasing private constant WETH = IERC20Rebasing(0x4300000000000000000000000000000000000004);
+    IERC20Rebasing private constant USDB = IERC20Rebasing(0x4200000000000000000000000000000000000022);
+    IERC20Rebasing private constant WETH = IERC20Rebasing(0x4200000000000000000000000000000000000023);
 
     // NOTE: the commented lines below are the testnet addresses
     // IERC20Rebasing private constant USDB = IERC20Rebasing(0x4200000000000000000000000000000000000022);
@@ -53,18 +53,19 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
         WETH.configure(YieldMode.CLAIMABLE);
         USDB.configure(YieldMode.CLAIMABLE);
         BLAST.configureClaimableGas();
-        BLAST.configureClaimableYield();
-
     }
 
+    function setupYield() external onlyOwner {
+        BLAST.configureClaimableYield();
+    }
     /**
         * @notice Claims all available yield for WETH, USDB, and ETH
-        * @dev This function can only be called by the contract owner
-        * @dev Claims WETH and USDB yield using the IERC20Rebasing interface
-        * @dev Claims ETH yield using the IBlast interface
-        * @dev Updates the accumulated yield amounts for each token type
+    * @dev This function can only be called by the contract owner
+    * @dev Claims WETH and USDB yield using the IERC20Rebasing interface
+    * @dev Claims ETH yield using the IBlast interface
+    * @dev Updates the accumulated yield amounts for each token type
         * @dev Emits YieldClaimed events for WETH and USDB, and ETHYieldClaimed for ETH
-        */
+            */
     function claimYield() public onlyOwner {
         address smartContract = address(this);
 
@@ -92,15 +93,15 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
 
     /**
         * @notice Withdraws accumulated yield for WETH or USDB
-        * @dev This function can only be called by the contract owner
-        * @param token The address of the token to withdraw (must be WETH or USDB)
-        * @param recipient The address to receive the withdrawn yield
-        * @param amount The amount of yield to withdraw
-        * @custom:throws InvalidToken if the token is not WETH or USDB
+    * @dev This function can only be called by the contract owner
+    * @param token The address of the token to withdraw (must be WETH or USDB)
+    * @param recipient The address to receive the withdrawn yield
+    * @param amount The amount of yield to withdraw
+    * @custom:throws InvalidToken if the token is not WETH or USDB
         * @custom:throws InsufficientWETHYield if trying to withdraw more WETH than accumulated
-        * @custom:throws InsufficientUSDBYield if trying to withdraw more USDB than accumulated
-        * @custom:throws TransferFailed if the token transfer fails
-        */
+            * @custom:throws InsufficientUSDBYield if trying to withdraw more USDB than accumulated
+                * @custom:throws TransferFailed if the token transfer fails
+                    */
     function withdrawAccumulatedYield(address token, address recipient, uint256 amount) public onlyOwner {
         if (token != address(WETH) && token != address(USDB)) {
             revert InvalidToken(token);
@@ -127,11 +128,11 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
 
     /**
         * @notice Claims all available gas yield
-        * @dev This function can only be called by the contract owner
-        * @dev Uses the IBlast interface to claim all gas
-        * @dev Adds the claimed amount to the accumulated ETH yield
-        * @dev Emits a GasClaimed event with the claimed amount
-        */
+    * @dev This function can only be called by the contract owner
+    * @dev Uses the IBlast interface to claim all gas
+    * @dev Adds the claimed amount to the accumulated ETH yield
+    * @dev Emits a GasClaimed event with the claimed amount
+    */
     function claimGas() public onlyOwner {
         address smartContract = address(this);
         uint256 claimed = BLAST.claimAllGas(smartContract, smartContract);
@@ -141,11 +142,11 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
 
     /**
         * @notice Claims the maximum available gas yield
-        * @dev This function can only be called by the contract owner
-        * @dev Uses the IBlast interface to claim the maximum gas
-        * @dev Adds the claimed amount to the accumulated ETH yield
-        * @dev Emits a GasClaimed event with the claimed amount
-        */
+    * @dev This function can only be called by the contract owner
+    * @dev Uses the IBlast interface to claim the maximum gas
+    * @dev Adds the claimed amount to the accumulated ETH yield
+    * @dev Emits a GasClaimed event with the claimed amount
+    */
     function claimMaxGas() public onlyOwner {
         address smartContract = address(this);
         uint256 claimed = BLAST.claimMaxGas(smartContract, smartContract);
@@ -155,12 +156,12 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
 
     /**
         * @notice Withdraws accumulated ETH yield
-        * @dev This function can only be called by the contract owner
-        * @param recipient The address to receive the withdrawn ETH yield
-        * @param amount The amount of ETH yield to withdraw
-        * @custom:throws InsufficientETHYield if trying to withdraw more ETH than accumulated
+    * @dev This function can only be called by the contract owner
+    * @param recipient The address to receive the withdrawn ETH yield
+    * @param amount The amount of ETH yield to withdraw
+    * @custom:throws InsufficientETHYield if trying to withdraw more ETH than accumulated
         * @custom:throws TransferFailed if the ETH transfer fails
-        */
+            */
     function withdrawETHYield(address payable recipient, uint256 amount) public onlyOwner {
         if (amount > accumulatedETHYield) {
             revert InsufficientETHYield(amount, accumulatedETHYield);
