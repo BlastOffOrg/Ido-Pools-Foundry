@@ -32,7 +32,7 @@ interface IMultiplierContract {
 /// @notice This contract allows for timed updates to multiplier and threshold configurations based on user stakings.
 contract MultiplierContract {
     address public admin;
-    uint256 public constant UPDATE_INTERVAL = 24 hours; // The time interval after which updates can be executed.
+    uint256 public constant UPDATE_INTERVAL = 1 minutes; // The time interval after which updates can be executed.
     uint256 public maxLevel; 
 
     IStakingContract public stakingContract;
