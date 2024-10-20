@@ -53,10 +53,11 @@ contract BlastYieldAbstract is Ownable2StepUpgradeable {
         WETH.configure(YieldMode.CLAIMABLE);
         USDB.configure(YieldMode.CLAIMABLE);
         BLAST.configureClaimableGas();
-        BLAST.configureClaimableYield();
-
     }
 
+    function setupYield() external onlyOwner {
+        BLAST.configureClaimableYield();
+    }
     /**
         * @notice Claims all available yield for WETH, USDB, and ETH
         * @dev This function can only be called by the contract owner

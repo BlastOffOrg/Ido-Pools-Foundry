@@ -12,7 +12,7 @@ contract DeployScript is Script {
         vm.startBroadcast();
 
         // Deploy MultiplierContract
-        address stakingContractAddress = address(0); // Replace with actual address
+        address stakingContractAddress = address(vm.envAddress("TOKEN_STAKING_CA")); // Replace with actual address
         MultiplierContract multiplierContract = new MultiplierContract(stakingContractAddress);
 
         // Deploy StandardIDOPool implementation
