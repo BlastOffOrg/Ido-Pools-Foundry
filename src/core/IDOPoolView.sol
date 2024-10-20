@@ -222,5 +222,127 @@ abstract contract IDOPoolView is IDOStorage {
         return maxAllocation;
     }
 
+    /**
+     * @notice Retrieves a paginated list of participants for a specific IDO round
+     * @dev This function returns a portion of the participants array for the given IDO round,
+     *      using startIndex and pageSize for pagination
+     * @param idoRoundId The ID of the IDO round
+     * @param startIndex The starting index for pagination
+     * @param pageSize The number of participants to return per page
+     * @return participants An array of participant addresses for the specified IDO round and page
+     * @return nextIndex The starting index for the next page, or 0 if this is the last page
+     */
+    function getIDOParticipants(
+        uint32 idoRoundId,
+        uint256 startIndex,
+        uint256 pageSize
+    ) external view returns (address[] memory participants, uint256 nextIndex) {
+        IDOStructs.IDORoundConfig storage idoConfig = idoRoundConfigs[idoRoundId];
+        uint256 totalParticipants = idoConfig.idoParticipants.length;
+        
+        require(startIndex < totalParticipants, "Start index out of bounds");
+
+        // Determine the actual page size (might be smaller for the last page)
+        uint256 actualPageSize = pageSize;
+        if (startIndex + pageSize > totalParticipants) {
+            actualPageSize = totalParticipants - startIndex;
+        }
+
+        participants = new address[](actualPageSize);
+
+        // Fill the participants array from the idoParticipants Array
+        for (uint256 i = 0; i < actualPageSize; i++) {
+            participants[i] = idoConfig.idoParticipants[startIndex + i];
+        }
+
+        // Set the next index
+        nextIndex = (startIndex + actualPageSize < totalParticipants) ? startIndex + actualPageSize : 0;
+
+        return (participants, nextIndex);
+    }
+
+    /**
+     * @notice Retrieves paginated information about participants across one or multiple IDO rounds
+     * @dev This function aggregates participant data for the specified IDO rounds,
+     *      ensuring all rounds use the same IDO token. It returns data in pages to handle large numbers of participants.
+     * @param roundIds An array of IDO round identifiers to query
+     * @param startIndex The starting index for pagination
+     * @param pageSize The number of participants to return per page
+     * @return participants An array of participant addresses for the current page
+     * @return totalAmounts An array of total amounts contributed by each participant on the current page
+     * @return totalIdoTokenAmounts An array of total IDO token amounts allocated to each participant on the current page
+     * @return nextIndex The starting index for the next page, or 0 if this is the last page
+     */
+    function getParticipantsInfo(
+        uint32[] calldata roundIds,
+        uint256 startIndex,
+        uint256 pageSize
+    ) external view returns (
+        address[] memory participants,
+        uint256[] memory totalAmounts,
+        uint256[] memory totalIdoTokenAmounts,
+        uint256 nextIndex
+    ) {
+        require(roundIds.length > 0, "At least one round ID is required");
+        require(pageSize > 0 && pageSize <= 500, "Invalid page size");
+
+        // Check if all rounds have the same IDO token
+        address idoToken = idoRoundConfigs[roundIds[0]].idoToken;
+        for (uint i = 1; i < roundIds.length; i++) {
+            require(idoRoundConfigs[roundIds[i]].idoToken == idoToken, "All rounds must have the same IDO token");
+        }
+
+        // Collect all unique participants
+        address[] memory allParticipants = new address[](0);
+        for (uint i = 0; i < roundIds.length; i++) {
+            address[] memory roundParticipants = idoRoundConfigs[roundIds[i]].idoParticipants;
+            for (uint j = 0; j < roundParticipants.length; j++) {
+                bool isUnique = true;
+                for (uint k = 0; k < allParticipants.length; k++) {
+                    if (allParticipants[k] == roundParticipants[j]) {
+                        isUnique = false;
+                        break;
+                    }
+                }
+                if (isUnique) {
+                    address[] memory newAllParticipants = new address[](allParticipants.length + 1);
+                    for (uint k = 0; k < allParticipants.length; k++) {
+                        newAllParticipants[k] = allParticipants[k];
+                    }
+                    newAllParticipants[allParticipants.length] = roundParticipants[j];
+                    allParticipants = newAllParticipants;
+                }
+            }
+        }
+
+        uint256 totalUniqueParticipants = allParticipants.length;
+        require(startIndex < totalUniqueParticipants, "Start index out of bounds");
+
+        // Determine the actual page size
+        uint256 actualPageSize = (startIndex + pageSize > totalUniqueParticipants) 
+            ? totalUniqueParticipants - startIndex 
+            : pageSize;
+
+        participants = new address[](actualPageSize);
+        totalAmounts = new uint256[](actualPageSize);
+        totalIdoTokenAmounts = new uint256[](actualPageSize);
+
+        for (uint i = 0; i < actualPageSize; i++) {
+            uint256 participantIndex = startIndex + i;
+            address participant = allParticipants[participantIndex];
+            participants[i] = participant;
+
+            for (uint j = 0; j < roundIds.length; j++) {
+                IDOStructs.Position storage position = idoRoundConfigs[roundIds[j]].accountPositions[participant];
+                totalAmounts[i] += position.amount;
+                totalIdoTokenAmounts[i] += position.tokenAllocation;
+            }
+        }
+
+        // Calculate next index
+        nextIndex = (startIndex + actualPageSize < totalUniqueParticipants) ? startIndex + actualPageSize : 0;
+
+        return (participants, totalAmounts, totalIdoTokenAmounts, nextIndex);
+    }
 }
 

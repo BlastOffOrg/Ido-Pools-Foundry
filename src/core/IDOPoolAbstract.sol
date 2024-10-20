@@ -376,6 +376,11 @@ abstract contract IDOPoolAbstract is IIDOPool, Ownable2StepUpgradeable, IDOStora
         _roundSpecsParticipationCheck(idoRoundId, msg.sender, amount, participantRank, participantMultiplier);     // Round specs check
 
         IDOStructs.Position storage position = idoConfig.accountPositions[msg.sender];
+        
+        if (position.amount == 0) {
+        // This is the first time this participant is joining this round
+        idoConfig.idoParticipants.push(msg.sender);
+        }
 
         if (token == idoConfig.fyToken) {
             position.fyAmount += amount;

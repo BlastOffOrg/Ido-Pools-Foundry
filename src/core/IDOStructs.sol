@@ -44,6 +44,7 @@ library IDOStructs {
         uint256 idoTokensClaimed;
         uint256 minimumFundingGoal;
         uint256 fundedUSDValue;
+        address[] idoParticipants;
         mapping(address => uint256) totalFunded;
         mapping(address => Position) accountPositions;
     }
