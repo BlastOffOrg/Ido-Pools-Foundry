@@ -8,7 +8,10 @@ import "../src/core/IDOStructs.sol";
 
 // Create round
 contract CreateRound is Script {
-    function run() external {
+    /**
+        * @param metaIdoId The identifier of the meta IDO
+    **/
+    function run(uint32 metaIdoId) external {
         // Load contract addresses from .env file
         address payable launchpadContractAddress = payable(vm.envAddress("IDO_POOL_PROXY_CA"));
         address buyTokenAddress = vm.envAddress("MOCK_USDB");
@@ -23,17 +26,16 @@ contract CreateRound is Script {
 
         // Get round next ID & last metaIdo ID
         uint32 nextIdoRoundId = launchpadContract.nextIdoRoundId();
-        uint32 lastMetaIdoId = launchpadContract.nextMetaIdoId() - 1;
 
         // createIDORound
         // Get last meta IDO timestamp
-        (uint64 registrationStartTime, , ) = launchpadContract.metaIDOs(lastMetaIdoId);
+        (uint64 registrationStartTime, ,) = launchpadContract.metaIDOs(metaIdoId);
         launchpadContract.createIDORound(
             "Yasu round",
             idoTokenAddress,
             buyTokenAddress,
             fyUSDBAddress,
-            20000000000000000000,
+            1000000000000000000,
             1000000000000000000000,
             0,
             0,
@@ -47,7 +49,7 @@ contract CreateRound is Script {
             nextIdoRoundId,
             1,
             5,
-            2000000000000000000000,
+            10000000000000000000,
             1,
             2,
             false,
@@ -56,12 +58,14 @@ contract CreateRound is Script {
         );
 
         // manageRoundToMetaIDO
-        launchpadContract.manageRoundToMetaIDO(lastMetaIdoId, nextIdoRoundId, true);
+        launchpadContract.manageRoundToMetaIDO(metaIdoId, nextIdoRoundId, true);
 
         // enableIDORound
-        // -- Step 1: Mint some buyToken to the launchpad contract address
+        // -- Step 1: Mint some buyToken & idotoken to the launchpad contract address
         MockERC20 buyTokenContract = MockERC20(buyTokenAddress);
+        MockERC20 idoTokenContract = MockERC20(idoTokenAddress);
         buyTokenContract.mint(launchpadContractAddress, 1000000000000000000000);
+        idoTokenContract.mint(idoTokenAddress, 1000000000000000000000);
 
         // -- Step 2: Enable
         launchpadContract.enableIDORound(nextIdoRoundId);
